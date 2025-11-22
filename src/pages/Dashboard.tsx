@@ -1,20 +1,21 @@
-import { useEffect, useState } from 'react';
-import { DashboardSidebar } from '@/components/DashboardSidebar';
-import { MetricCard } from '@/components/MetricCard';
-import { ForecastLineChart } from '@/components/charts/ForecastLineChart';
 import { CountryBarChart } from '@/components/charts/CountryBarChart';
+import { ForecastLineChart } from '@/components/charts/ForecastLineChart';
 import { ProductBarChart } from '@/components/charts/ProductBarChart';
 import { RFMDonutChart } from '@/components/charts/RFMDonutChart';
 import { CustomerTable } from '@/components/CustomerTable';
-import { HashCard } from '@/components/HashCard';
-import { OfferCard } from '@/components/OfferCard';
+import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { ExportButton } from '@/components/ExportButton';
-import { TrendingUp } from 'lucide-react';
-import { fetchDashboardData, DashboardData } from '@/services/api';
+import { HashCard } from '@/components/HashCard';
+import { MetricCard } from '@/components/MetricCard';
+import { OfferCard } from '@/components/OfferCard';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DateRange } from 'react-day-picker';
+import { DashboardData, fetchDashboardData } from '@/services/api';
 import { subDays } from 'date-fns';
+import { TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { DateRange } from 'react-day-picker';
 
 const Dashboard = () => {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -40,6 +41,31 @@ const Dashboard = () => {
       console.error('Failed to load dashboard data:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const [isBlockchainLoading, setIsBlockchainLoading] = useState(false);
+
+  const logToBlockchain = async () => {
+    if (!data) return;
+    setIsBlockchainLoading(true);
+    try {
+        const response = await fetch('/api/log-blockchain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hash: data.hash })
+        });
+        const result = await response.json();
+        if (result.success) {
+            // Update local state with the new TX hash
+            setData(prev => prev ? { ...prev, tx_hash: result.tx_hash } : null);
+        } else {
+            console.error("Blockchain error:", result.error);
+        }
+    } catch (error) {
+        console.error("Failed to log to blockchain:", error);
+    } finally {
+        setIsBlockchainLoading(false);
     }
   };
 
@@ -116,12 +142,29 @@ const Dashboard = () => {
               title="SHA-256 Integrity Hash"
               hash={data.hash}
             />
-            <HashCard
-              title="Blockchain Transaction Hash"
-              hash={data.tx_hash}
-              link={`https://etherscan.io/tx/${data.tx_hash}`}
-              verified={true}
-            />
+            
+            {data.tx_hash && data.tx_hash !== 'Pending...' ? (
+                <HashCard
+                  title="Blockchain Transaction Hash"
+                  hash={data.tx_hash}
+                  link={`https://etherscan.io/tx/${data.tx_hash}`}
+                  verified={true}
+                />
+            ) : (
+                <div className="glass-card p-6 flex flex-col items-center justify-center gap-4">
+                    <h3 className="text-sm font-semibold">Blockchain Verification</h3>
+                    <p className="text-xs text-muted-foreground text-center">
+                        Log this forecast hash to the Ethereum blockchain (Ganache) for immutable proof.
+                    </p>
+                    <Button 
+                        onClick={logToBlockchain} 
+                        disabled={isBlockchainLoading}
+                        className="w-full bg-gradient-to-r from-primary to-accent"
+                    >
+                        {isBlockchainLoading ? 'Mining Transaction...' : '⛓️ Log to Blockchain'}
+                    </Button>
+                </div>
+            )}
           </div>
         </div>
       </main>

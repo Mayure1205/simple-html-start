@@ -1,5 +1,4 @@
 import { DateRange } from "react-day-picker";
-import { loadAndProcessCSV } from "./dataProcessor";
 
 export interface DashboardData {
   total_forecast: number;
@@ -25,36 +24,70 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
   // Show loading state
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  console.log("Fetching data for range:", dateRange);
+  console.log("Fetching data from API...");
 
-  // Create a cache key from the date range
-  const dateKey = dateRange ? `${dateRange.from?.toISOString()}-${dateRange.to?.toISOString()}` : 'all';
+  try {
+    const response = await fetch('/api/dashboard');
+    const result = await response.json();
 
-  // Clear cache if date range changed
-  if (cachedDateRange !== dateKey) {
-    cachedData = null;
-    cachedDateRange = dateKey;
-    console.log("🔄 Date range changed, clearing cache");
-  }
+    if (result.success) {
+      console.log("✅ Data loaded from API!");
+      const data = result.data;
 
-  // Load data from CSV if not cached
-  if (!cachedData) {
-    try {
-      const csvPath = '/data/online_retail_II.csv';
-      console.log("Loading CSV from:", csvPath);
-      cachedData = await loadAndProcessCSV(csvPath, dateRange);
-      console.log("✅ Data loaded and processed successfully from CSV!");
-    } catch (error) {
-      console.error("❌ Error loading CSV data:", error);
-      console.log("⚠️ Falling back to mock data");
-      // Fallback to mock data if CSV loading fails
-      return getMockData();
+      // Map API response to DashboardData interface
+      return {
+        total_forecast: data.forecast.totalForecast,
+        historical: data.forecast.historical,
+        forecast: data.forecast.forecast,
+        // Mock countries/products for now as API doesn't return them yet
+        countries: [
+          { country: 'United Kingdom', sales: 8200000 },
+          { country: 'Germany', sales: 6200000 },
+          { country: 'France', sales: 5800000 },
+          { country: 'EIRE', sales: 4200000 },
+          { country: 'Spain', sales: 3800000 }
+        ],
+        products: [
+          { product: 'WHITE HANGING HEART T-LIGHT HOLDER', quantity: 8500 },
+          { product: 'REGENCY CAKESTAND 3 TIER', quantity: 7200 },
+          { product: 'JUMBO BAG RED RETROSPOT', quantity: 6800 },
+          { product: 'ASSORTED COLOUR BIRD ORNAMENT', quantity: 6400 },
+          { product: 'PARTY BUNTING', quantity: 5900 }
+        ],
+        rfm: Object.entries(data.rfm.segmentCounts).map(([segment, count]) => ({
+          segment,
+          count: count as number,
+          color: getSegmentColor(segment)
+        })),
+        customers: data.rfm.topCustomers.map((c: any) => ({
+          id: c.id,
+          monetary: c.amount,
+          segment: c.segment,
+          offer: c.offer
+        })),
+        hash: data.hash,
+        tx_hash: 'Pending...' // Will be updated by blockchain action
+      };
+    } else {
+      throw new Error(result.error);
     }
-  } else {
-    console.log("📦 Using cached data");
+  } catch (error) {
+    console.error("❌ Error loading API data:", error);
+    console.log("⚠️ Falling back to mock data");
+    return getMockData();
   }
+};
 
-  return cachedData;
+const getSegmentColor = (segment: string) => {
+  const colors: Record<string, string> = {
+    'Champions': 'hsl(var(--chart-1))',
+    'Loyal Customers': 'hsl(var(--chart-2))',
+    'At Risk': 'hsl(var(--chart-4))',
+    'Potential Loyalists': 'hsl(var(--chart-5))',
+    'Lost': 'hsl(var(--chart-3))',
+    'Standard': 'hsl(var(--chart-3))'
+  };
+  return colors[segment] || 'hsl(var(--chart-3))';
 };
 
 // Fallback mock data in case CSV loading fails
