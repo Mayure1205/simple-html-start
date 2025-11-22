@@ -3,3 +3,5 @@ flask-cors
 pandas
 numpy
 web3
+scikit-learn
+py-solc-x

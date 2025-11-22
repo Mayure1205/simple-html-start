@@ -1,5 +1,5 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface Props {
   data: Array<{ country: string; sales: number }>;
@@ -26,7 +26,7 @@ export const CountryBarChart = ({ data }: Props) => {
             type="number"
             stroke="hsl(var(--muted-foreground))"
             tick={{ fill: 'hsl(var(--foreground))' }}
-            tickFormatter={(value) => `₹${(value / 100000).toFixed(1)}L`}
+            tickFormatter={(value) => `£${(value / 100000).toFixed(1)}L`}
           />
           <YAxis
             type="category"

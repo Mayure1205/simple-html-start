@@ -1,13 +1,13 @@
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 
 interface Customer {
   id: string;
@@ -61,7 +61,7 @@ export const CustomerTable = ({ customers }: Props) => {
             {customers.map((customer) => (
               <TableRow key={customer.id} className="border-border/50 hover:bg-muted/30">
                 <TableCell className="font-mono font-medium">{customer.id}</TableCell>
-                <TableCell className="font-bold text-lg">₹{customer.monetary.toLocaleString()}</TableCell>
+                <TableCell className="font-bold text-lg">£{customer.monetary.toLocaleString()}</TableCell>
                 <TableCell>
                   <Badge className={getSegmentColor(customer.segment)}>
                     {customer.segment}

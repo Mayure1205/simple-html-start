@@ -39,21 +39,15 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
         total_forecast: data.forecast.totalForecast,
         historical: data.forecast.historical,
         forecast: data.forecast.forecast,
-        // Mock countries/products for now as API doesn't return them yet
-        countries: [
-          { country: 'United Kingdom', sales: 8200000 },
-          { country: 'Germany', sales: 6200000 },
-          { country: 'France', sales: 5800000 },
-          { country: 'EIRE', sales: 4200000 },
-          { country: 'Spain', sales: 3800000 }
-        ],
-        products: [
-          { product: 'WHITE HANGING HEART T-LIGHT HOLDER', quantity: 8500 },
-          { product: 'REGENCY CAKESTAND 3 TIER', quantity: 7200 },
-          { product: 'JUMBO BAG RED RETROSPOT', quantity: 6800 },
-          { product: 'ASSORTED COLOUR BIRD ORNAMENT', quantity: 6400 },
-          { product: 'PARTY BUNTING', quantity: 5900 }
-        ],
+        // Use real data from API
+        countries: data.countries.map((c: any) => ({
+          country: c.country,
+          sales: c.sales
+        })),
+        products: data.products.map((p: any) => ({
+          product: p.product,
+          quantity: p.quantity
+        })),
         rfm: Object.entries(data.rfm.segmentCounts).map(([segment, count]) => ({
           segment,
           count: count as number,

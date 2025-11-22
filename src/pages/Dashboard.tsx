@@ -7,13 +7,10 @@ import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { ExportButton } from '@/components/ExportButton';
 import { HashCard } from '@/components/HashCard';
-import { MetricCard } from '@/components/MetricCard';
-import { OfferCard } from '@/components/OfferCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardData, fetchDashboardData } from '@/services/api';
 import { subDays } from 'date-fns';
-import { TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DateRange } from 'react-day-picker';
 
@@ -53,7 +50,10 @@ const Dashboard = () => {
         const response = await fetch('/api/log-blockchain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ hash: data.hash })
+            body: JSON.stringify({ 
+                hash: data.hash,
+                total_sales: data.total_forecast 
+            })
         });
         const result = await response.json();
         if (result.success) {
@@ -100,22 +100,6 @@ const Dashboard = () => {
               <DatePickerWithRange date={date} setDate={setDate} />
               <ExportButton data={data} dateRange={date} />
             </div>
-          </div>
-
-          {/* Header Metric */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2">
-              <MetricCard
-                title="Total 4-Week Forecasted Sales (AI Powered)"
-                value={`₹${data.total_forecast.toLocaleString()}`}
-                icon={TrendingUp}
-              />
-            </div>
-            <OfferCard
-              segment="VIP"
-              offer="15% VIP Discount"
-              description="Recommended for high-value customers to maintain loyalty and increase LTV."
-            />
           </div>
 
           {/* Forecast Chart */}

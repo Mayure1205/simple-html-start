@@ -1,14 +1,14 @@
-import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DashboardData } from '@/services/api';
-import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
+import { Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface ExportButtonProps {
   data: DashboardData;
@@ -30,18 +30,18 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     const forecastData = [
       ['Sales Forecast Report'],
       [`Date Range: ${dateRange?.from ? format(dateRange.from, 'MMM dd, yyyy') : 'All Time'} - ${dateRange?.to ? format(dateRange.to, 'MMM dd, yyyy') : format(new Date(), 'MMM dd, yyyy')}`],
-      [`Total Forecast: ₹${data.total_forecast.toLocaleString()}`],
+      [`Total Forecast: £${data.total_forecast.toLocaleString()}`],
       [],
       ['Historical Data'],
-      ['Week', 'Sales (₹)'],
+      ['Week', 'Sales (£)'],
       ...data.historical.map(h => [h.week, h.sales]),
       [],
       ['Forecast Data'],
-      ['Week', 'Sales (₹)', 'Lower Bound (₹)', 'Upper Bound (₹)'],
+      ['Week', 'Sales (£)', 'Lower Bound (£)', 'Upper Bound (£)'],
       ...data.forecast.map(f => [f.week, f.sales, f.lower, f.upper]),
       [],
       ['Country Sales'],
-      ['Country', 'Sales (₹)'],
+      ['Country', 'Sales (£)'],
       ...data.countries.map(c => [c.country, c.sales]),
       [],
       ['Product Quantities'],
@@ -53,7 +53,7 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
       ...data.rfm.map(r => [r.segment, r.count]),
       [],
       ['Top Customers'],
-      ['Customer ID', 'Monetary Value (₹)', 'Segment', 'Recommended Offer'],
+      ['Customer ID', 'Monetary Value (£)', 'Segment', 'Recommended Offer'],
       ...data.customers.map(c => [c.id, c.monetary, c.segment, c.offer]),
     ];
 
