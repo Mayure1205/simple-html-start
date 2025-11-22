@@ -4,54 +4,105 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/contexts/AuthContext'; // Assuming you have this custom hook for managing user authentication
-import axios from 'axios';
+import SHA256 from 'crypto-js/sha256'; // Importing SHA256 from crypto-js
 import { TrendingUp } from 'lucide-react';
-//import { useRouter } from 'next/router'; // Assuming you're using Next.js
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isCaptchaValid, setIsCaptchaValid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  const nav=useNavigate();  
-  const { login } = useAuth();
+  const [passwordStrength, setPasswordStrength] = useState('');
+  const [passwordStrengthClass, setPasswordStrengthClass] = useState('');
+  const [passwordStrengthBar, setPasswordStrengthBar] = useState(0); // 0-100 scale
+  const nav = useNavigate();
   
+  const hardcodedUsername = 'testuser';
+  const hardcodedPassword = 'password123';  // Hardcoded demo password
+  const storedHashedPassword = localStorage.getItem('hashedPassword');  // Retrieve stored hash
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Password strength validation (more genuine)
+  const checkPasswordStrength = (password) => {
+    const length = password.length;
+    const hasNumber = /\d/;
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/;
+    const hasUpperCase = /[A-Z]/;
+    const hasLowerCase = /[a-z]/;
+
+    let strengthScore = 0;
+
+    // Length check
+    if (length >= 8) strengthScore += 25;
+    if (length >= 12) strengthScore += 25;
+
+    // Check for numbers, uppercase, lowercase, special characters
+    if (hasNumber) strengthScore += 25;
+    if (hasSpecialChar) strengthScore += 25;
+    if (hasUpperCase) strengthScore += 25;
+    if (hasLowerCase) strengthScore += 25;
+
+    // Set password strength text and class based on the score
+    if (strengthScore < 50) {
+      setPasswordStrength('Weak password');
+      setPasswordStrengthClass('text-red-500');
+    } else if (strengthScore < 75) {
+      setPasswordStrength('Moderate password');
+      setPasswordStrengthClass('text-yellow-500');
+    } else {
+      setPasswordStrength('Strong password');
+      setPasswordStrengthClass('text-green-500');
+    }
+
+    // Set password strength bar
+    setPasswordStrengthBar(strengthScore);
+  };
+
+  // Hash the password using SHA-256 (for demo purposes)
+  const hashPassword = (password) => {
+    return SHA256(password).toString();  // Hashing the password with SHA-256
+  };
+
+  // // Check if the user is already logged in by looking for the hashed password in localStorage
+  // useEffect(() => {
+  //   if (storedHashedPassword) {
+  //   nav('/dashboard');  // Redirect to dashboard if already logged in
+  //   }
+  // }, [storedHashedPassword]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Basic validation for fields
+    if (!username || !password) {
+      toast.error('Please fill in both the username and password.');
+      return;
+    }
+
+    if (password.length < 6) {
+      toast.error('Password must be at least 6 characters long.');
+      return;
+    }
 
     if (!isCaptchaValid) {
       toast.error('Please enter the correct CAPTCHA code');
       return;
     }
 
-    setIsLoading(true);
-    try {
-      // Send POST request to backend login route
-      const response = await axios.post('http://localhost:5000/api/login', {
-        username,
-        password,
-      }, {
-        withCredentials: true,  // Make sure the cookie is sent and received
-      });
-
-      // If login is successful, store the JWT token in cookies (handled by the backend)
-      if (response.status === 200) {
-        toast.success('Login successful!');
-        // Optionally redirect to another page
-        nav('/dashboard'); // Redirect to the Dashboard page or wherever you need
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'An error occurred during login');
-    } finally {
-      setIsLoading(false);
+    // Check if hardcoded credentials match
+    const hashedPassword = hashPassword(password);
+    if (username === hardcodedUsername && hashedPassword === hashPassword(hardcodedPassword)) {
+      // Store hashed password in localStorage
+      localStorage.setItem('hashedPassword', hashedPassword);
+      toast.success('Login successful!');
+      nav('/dashboard');  // Redirect to the Dashboard
+    } else {
+      toast.error('Invalid username or password');
     }
+
+    setIsLoading(false);
   };
 
   return (
@@ -92,10 +143,22 @@ const Login = () => {
               type="password"
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                checkPasswordStrength(e.target.value); // Check password strength on change
+              }}
               required
               className="bg-background/50"
             />
+            <div className={`mt-1 text-sm ${passwordStrengthClass}`}>
+              {passwordStrength}
+            </div>
+            <div className="h-1 w-full bg-gray-300 mt-2">
+              <div
+                className={`h-1 bg-gradient-to-r from-red-500 to-yellow-500`}
+                style={{ width: `${passwordStrengthBar}%` }}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

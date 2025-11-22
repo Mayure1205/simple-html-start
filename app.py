@@ -25,8 +25,8 @@ CONTRACT_ADDRESS_FILE = "contract_address.txt"
 data_cache = {}
 
 def load_data():
-    if 'df' in data_cache: return data_cache['df']
-    
+    if 'df' in data_cache:
+        return data_cache['df']
     print("Loading dataset...")
     try:
         csv_path = 'online_retail_II.csv'
@@ -42,7 +42,7 @@ def load_data():
         if df.empty:
             print("❌ CSV file is empty!")
             return None
-            
+        
         # Dynamic Column Mapping
         col_map = {
             'InvoiceNo': next((c for c in df.columns if 'invoice' in c.lower()), 'InvoiceNo'),
@@ -61,7 +61,7 @@ def load_data():
         if df.empty:
             print("❌ No valid customer data after cleaning!")
             return None
-            
+        
         df['InvoiceNo'] = df['InvoiceNo'].astype(str)
         df = df[~df['InvoiceNo'].str.startswith('C')]
         df['TotalAmount'] = df['Quantity'] * df['Price']
@@ -132,7 +132,7 @@ def generate_ml_forecast(df):
         # Christmas Boost Logic
         if date.month == 12 and 18 <= date.day <= 31:
             pred *= 1.4
-            
+        
         forecast.append({
             'week': date.strftime('%d %b'),
             'sales': round(pred, 2),

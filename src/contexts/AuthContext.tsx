@@ -1,72 +1,64 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import SHA256 from 'crypto-js/sha256'; // Importing SHA-256 hashing from crypto-js
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-interface User {
-  username: string;
-  token: string;
-}
+const hardcodedPasswordHash = SHA256('password123').toString();  // The hash of the hardcoded password
 
 interface AuthContextType {
-  user: User | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (password: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
+  user: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<string | null>(null);  // Track user state
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for existing session
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    const storedHashedPassword = localStorage.getItem('hashedPassword');
+    if (storedHashedPassword) {
+      if (storedHashedPassword === hardcodedPasswordHash) {
+        setUser('authenticated');
+        navigate('/dashboard');
+      } else {
+        navigate('/');
+      }
+    } else {
+      navigate('/');
     }
     setIsLoading(false);
-  }, []);
+  }, [navigate]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (password: string) => {
     try {
-      // Mock API call - replace with actual API endpoint
-      // const response = await fetch('/api/login', {
-      //   method: 'POST',
-      //   credentials: 'include',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ username, password })
-      // });
-
-      // Mock implementation
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (username && password) {
-        const mockUser = { username, token: 'mock-jwt-token' };
-        setUser(mockUser);
-        localStorage.setItem('user', JSON.stringify(mockUser));
+      const hashedPassword = SHA256(password).toString();
+      if (hashedPassword === hardcodedPasswordHash) {
+        localStorage.setItem('hashedPassword', hashedPassword);
+        setUser('authenticated');
         toast.success('Login successful!');
         navigate('/dashboard');
       } else {
-        throw new Error('Invalid credentials');
+        toast.error('Invalid credentials');
       }
     } catch (error) {
-      toast.error('Login failed. Please check your credentials.');
-      throw error;
+      toast.error('Login failed');
     }
   };
 
   const logout = () => {
+    localStorage.removeItem('hashedPassword');
     setUser(null);
-    localStorage.removeItem('user');
     toast.success('Logged out successfully');
     navigate('/');
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ login, logout, isLoading, user }}>
       {children}
     </AuthContext.Provider>
   );
