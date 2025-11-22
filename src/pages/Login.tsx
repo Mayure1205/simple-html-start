@@ -1,20 +1,27 @@
-import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { Captcha } from '@/components/Captcha';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card } from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext'; // Assuming you have this custom hook for managing user authentication
+import axios from 'axios';
 import { TrendingUp } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { Captcha } from '@/components/Captcha';
+//import { useRouter } from 'next/router'; // Assuming you're using Next.js
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isCaptchaValid, setIsCaptchaValid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const nav=useNavigate();  
   const { login } = useAuth();
+  
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,9 +33,22 @@ const Login = () => {
 
     setIsLoading(true);
     try {
-      await login(username, password);
+      // Send POST request to backend login route
+      const response = await axios.post('http://localhost:5000/api/login', {
+        username,
+        password,
+      }, {
+        withCredentials: true,  // Make sure the cookie is sent and received
+      });
+
+      // If login is successful, store the JWT token in cookies (handled by the backend)
+      if (response.status === 200) {
+        toast.success('Login successful!');
+        // Optionally redirect to another page
+        nav('/dashboard'); // Redirect to the Dashboard page or wherever you need
+      }
     } catch (error) {
-      // Error handled in AuthContext
+      toast.error(error.response?.data?.message || 'An error occurred during login');
     } finally {
       setIsLoading(false);
     }

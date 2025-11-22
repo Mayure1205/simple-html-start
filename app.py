@@ -29,10 +29,18 @@ def load_data():
     
     print("Loading dataset...")
     try:
-        if os.path.exists('online_retail_II.csv'):
-            df = pd.read_csv('online_retail_II.csv', encoding='ISO-8859-1')
-        else:
+        csv_path = 'online_retail_II.csv'
+        if not os.path.exists(csv_path):
             print("❌ CSV file not found!")
+            print(f"   Expected location: {os.path.abspath(csv_path)}")
+            print("   Please download from: https://www.kaggle.com/datasets/mashlyn/online-retail-ii-uci")
+            return None
+        
+        df = pd.read_csv(csv_path, encoding='ISO-8859-1')
+        
+        # Validate CSV has data
+        if df.empty:
+            print("❌ CSV file is empty!")
             return None
             
         # Dynamic Column Mapping
@@ -50,28 +58,62 @@ def load_data():
         
         # Cleaning
         df = df.dropna(subset=['CustomerID'])
+        if df.empty:
+            print("❌ No valid customer data after cleaning!")
+            return None
+            
         df['InvoiceNo'] = df['InvoiceNo'].astype(str)
         df = df[~df['InvoiceNo'].str.startswith('C')]
         df['TotalAmount'] = df['Quantity'] * df['Price']
-        df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
+        df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], errors='coerce')
+        
+        # Remove invalid dates
+        df = df.dropna(subset=['InvoiceDate'])
+        if df.empty:
+            print("❌ No valid date data after cleaning!")
+            return None
         
         data_cache['df'] = df
         print(f"✅ Loaded {len(df)} transactions")
         return df
     except Exception as e:
         print(f"❌ Error loading CSV: {e}")
+        import traceback
+        traceback.print_exc()
         return None
+
+# Global Cache for ML Model (Train Once, Use Forever)
+ML_MODEL_CACHE = {
+    'forecast_data': None,
+    'model': None,
+    'metrics': None
+}
 
 def generate_ml_forecast(df):
     """Generate forecast using Linear Regression"""
+    global ML_MODEL_CACHE
+    
+    # Return cached result if available
+    if ML_MODEL_CACHE['forecast_data'] is not None:
+        print("✅ Using cached model")
+        return ML_MODEL_CACHE['forecast_data']
+
     # Aggregate weekly sales
     weekly = df.set_index('InvoiceDate')['TotalAmount'].resample('W').sum().reset_index()
+    
+    # Filter out zero/negative weeks
+    weekly = weekly[weekly['TotalAmount'] > 100]
+    
+    if len(weekly) < 4:
+        raise ValueError("Insufficient weekly data for forecasting.")
+    
     weekly['WeekNum'] = range(len(weekly))
     
-    # Train Model
+    # Prepare data
     X = weekly[['WeekNum']].values
     y = weekly['TotalAmount'].values
     
+    # Train Model on ALL data
     model = LinearRegression()
     model.fit(X, y)
     
@@ -87,15 +129,15 @@ def generate_ml_forecast(df):
     for i, pred in enumerate(predictions):
         date = last_date + timedelta(weeks=i+1)
         
-        # Christmas Boost Logic (Real ML + Domain Knowledge)
+        # Christmas Boost Logic
         if date.month == 12 and 18 <= date.day <= 31:
             pred *= 1.4
             
         forecast.append({
             'week': date.strftime('%d %b'),
             'sales': round(pred, 2),
-            'lower': round(pred * 0.85, 2), # 85% confidence
-            'upper': round(pred * 1.15, 2)  # 115% confidence
+            'lower': round(pred * 0.85, 2),
+            'upper': round(pred * 1.15, 2)
         })
         
     # Historical Data (Last 8 weeks)
@@ -107,11 +149,17 @@ def generate_ml_forecast(df):
         del h['TotalAmount']
         del h['WeekNum']
         
-    return {
+    # Store in Cache
+    result = {
         'historical': historical,
         'forecast': forecast,
         'totalForecast': sum([f['sales'] for f in forecast])
     }
+    
+    ML_MODEL_CACHE['forecast_data'] = result
+    ML_MODEL_CACHE['model'] = model
+    
+    return result
 
 def get_top_stats(df):
     """Get Top Countries and Products"""
@@ -233,6 +281,17 @@ def log_to_blockchain_real(data_hash, total_sales):
             abi = [{"inputs":[{"internalType":"string","name":"_forecastHash","type":"string"},{"internalType":"uint256","name":"_totalSales","type":"uint256"}],"name":"logForecast","outputs":[],"stateMutability":"nonpayable","type":"function"}]
         
         contract = w3.eth.contract(address=address, abi=abi)
+        
+        # Check if hash already exists (prevent duplicate logging)
+        try:
+            is_logged = contract.functions.isHashLogged(data_hash).call()
+            if is_logged:
+                print(f"⚠️ Hash {data_hash[:16]}... already logged to blockchain")
+                return "ALREADY_LOGGED"
+        except:
+            # If function doesn't exist (old contract), continue anyway
+            pass
+        
         tx_hash = contract.functions.logForecast(data_hash, int(total_sales)).transact({'from': w3.eth.accounts[0]})
         return w3.to_hex(tx_hash)
     except Exception as e:
@@ -256,7 +315,35 @@ def log_to_blockchain_real(data_hash, total_sales):
 def get_dashboard():
     try:
         df = load_data()
-        if df is None: return jsonify({'success': False, 'error': 'Data load failed'}), 500
+        if df is None: 
+            return jsonify({
+                'success': False, 
+                'error': 'Data load failed. Please ensure online_retail_II.csv exists in the project root directory.'
+            }), 500
+        
+        # Get date range from query parameters
+        from_date = request.args.get('from')
+        to_date = request.args.get('to')
+        
+        # Filter data by date range if provided
+        if from_date or to_date:
+            if from_date:
+                from_dt = pd.to_datetime(from_date)
+                df = df[df['InvoiceDate'] >= from_dt]
+            if to_date:
+                to_dt = pd.to_datetime(to_date)
+                df = df[df['InvoiceDate'] <= to_dt]
+            
+            # Clear cache when date range changes (force retrain with filtered data)
+            global ML_MODEL_CACHE
+            ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+        
+        # Validate we have enough data for forecasting
+        if len(df) < 10:
+            return jsonify({
+                'success': False,
+                'error': 'Insufficient data for forecasting. Need at least 10 transactions.'
+            }), 500
         
         forecast = generate_ml_forecast(df)
         rfm = generate_rfm(df)
@@ -278,18 +365,41 @@ def get_dashboard():
         })
     except Exception as e:
         print(f"API Error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 @app.route('/api/log-blockchain', methods=['POST'])
 def log_blockchain():
-    data = request.json
-    # Get total sales from request, default to 0 if missing
-    total_sales = data.get('total_sales', 0)
-    tx_hash = log_to_blockchain_real(data.get('hash'), total_sales)
-    if tx_hash:
-        return jsonify({'success': True, 'tx_hash': tx_hash})
-    else:
-        return jsonify({'success': False, 'error': 'Blockchain failed'}), 500
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        # Get total sales from request, default to 0 if missing
+        total_sales = data.get('total_sales', 0)
+        data_hash = data.get('hash')
+        
+        if not data_hash:
+            return jsonify({'success': False, 'error': 'Hash is required'}), 400
+        
+        tx_hash = log_to_blockchain_real(data_hash, total_sales)
+        if tx_hash == "ALREADY_LOGGED":
+            return jsonify({
+                'success': False, 
+                'error': 'This forecast hash has already been logged to blockchain. Each unique forecast can only be logged once.',
+                'already_logged': True
+            }), 400
+        elif tx_hash:
+            return jsonify({'success': True, 'tx_hash': tx_hash})
+        else:
+            return jsonify({
+                'success': False, 
+                'error': 'Blockchain connection failed. Please ensure Ganache is running on port 8545.'
+            }), 500
+    except Exception as e:
+        print(f"Blockchain API Error: {e}")
+        return jsonify({'success': False, 'error': f'Blockchain error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     load_data()

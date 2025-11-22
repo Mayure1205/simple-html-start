@@ -46,20 +46,26 @@ export const RFMDonutChart = ({ data }: Props) => {
     setActiveIndex(index);
   };
 
-  // Map segments to new names and colors
+  // Map segments to colors (backend returns: Champions, Loyal Customers, Potential Loyalists, At Risk, Lost, Standard)
   const chartData = data.map(item => {
-    const segmentMap: Record<string, { name: string; color: string }> = {
-      VIP: { name: 'Top Spenders (VIP)', color: 'hsl(var(--vip-blue))' },
-      Loyal: { name: 'Loyal Customers', color: 'hsl(var(--loyal-purple))' },
-      'At-Risk': { name: 'At-Risk Churn', color: 'hsl(var(--at-risk-red))' },
-      Normal: { name: 'New Customers', color: 'hsl(var(--new-green))' },
+    const segmentColorMap: Record<string, string> = {
+      'Champions': 'hsl(var(--chart-1))',
+      'Loyal Customers': 'hsl(var(--chart-2))',
+      'Potential Loyalists': 'hsl(var(--chart-5))',
+      'At Risk': 'hsl(var(--chart-4))',
+      'Lost': 'hsl(var(--chart-3))',
+      'Standard': 'hsl(var(--chart-3))',
+      // Fallback for old segment names
+      'VIP': 'hsl(var(--chart-1))',
+      'Loyal': 'hsl(var(--chart-2))',
+      'At-Risk': 'hsl(var(--chart-4))',
+      'Normal': 'hsl(var(--chart-3))',
     };
 
-    const mapped = segmentMap[item.segment] || { name: item.segment, color: item.color };
     return {
-      segment: mapped.name,
+      segment: item.segment,
       count: item.count,
-      color: mapped.color,
+      color: segmentColorMap[item.segment] || item.color || 'hsl(var(--chart-3))',
     };
   });
 

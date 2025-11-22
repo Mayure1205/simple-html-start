@@ -22,10 +22,17 @@ interface Props {
 
 const getSegmentColor = (segment: string) => {
   const colors: Record<string, string> = {
-    VIP: 'bg-vip-blue text-white',
-    Loyal: 'bg-loyal-purple text-white',
-    'At-Risk': 'bg-at-risk-red text-white',
-    Normal: 'bg-new-green text-white',
+    'Champions': 'bg-blue-600 text-white',
+    'Loyal Customers': 'bg-purple-600 text-white',
+    'Potential Loyalists': 'bg-green-600 text-white',
+    'At Risk': 'bg-red-600 text-white',
+    'Lost': 'bg-gray-600 text-white',
+    'Standard': 'bg-gray-500 text-white',
+    // Fallback for old segment names
+    'VIP': 'bg-blue-600 text-white',
+    'Loyal': 'bg-purple-600 text-white',
+    'At-Risk': 'bg-red-600 text-white',
+    'Normal': 'bg-gray-500 text-white',
   };
   return colors[segment] || 'bg-muted';
 };

@@ -76,7 +76,7 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     const summaryData = [
       ['Sales Forecast Report'],
       [`Date Range: ${dateRange?.from ? format(dateRange.from, 'MMM dd, yyyy') : 'All Time'} - ${dateRange?.to ? format(dateRange.to, 'MMM dd, yyyy') : format(new Date(), 'MMM dd, yyyy')}`],
-      [`Total Forecast: ₹${data.total_forecast.toLocaleString()}`],
+      [`Total Forecast: £${data.total_forecast.toLocaleString()}`],
       [],
       ['Report Generated:', format(new Date(), 'MMM dd, yyyy HH:mm:ss')],
       ['Data Hash:', data.hash],
@@ -88,11 +88,11 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     // Historical & Forecast sheet
     const forecastData = [
       ['Historical Data'],
-      ['Week', 'Sales (₹)'],
+      ['Week', 'Sales (£)'],
       ...data.historical.map(h => [h.week, h.sales]),
       [],
       ['Forecast Data'],
-      ['Week', 'Sales (₹)', 'Lower Bound (₹)', 'Upper Bound (₹)'],
+      ['Week', 'Sales (£)', 'Lower Bound (£)', 'Upper Bound (£)'],
       ...data.forecast.map(f => [f.week, f.sales, f.lower, f.upper]),
     ];
     const forecastSheet = XLSX.utils.aoa_to_sheet(forecastData);
@@ -100,7 +100,7 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
 
     // Country sales sheet
     const countryData = [
-      ['Country', 'Sales (₹)'],
+      ['Country', 'Sales (£)'],
       ...data.countries.map(c => [c.country, c.sales]),
     ];
     const countrySheet = XLSX.utils.aoa_to_sheet(countryData);
@@ -124,7 +124,7 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
 
     // Top customers sheet
     const customersData = [
-      ['Customer ID', 'Monetary Value (₹)', 'Segment', 'Recommended Offer'],
+      ['Customer ID', 'Monetary Value (£)', 'Segment', 'Recommended Offer'],
       ...data.customers.map(c => [c.id, c.monetary, c.segment, c.offer]),
     ];
     const customersSheet = XLSX.utils.aoa_to_sheet(customersData);

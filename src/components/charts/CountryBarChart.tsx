@@ -41,7 +41,7 @@ export const CountryBarChart = ({ data }: Props) => {
               border: '1px solid hsl(var(--border))',
               borderRadius: '8px',
             }}
-            formatter={(value: number) => [`₹${value.toLocaleString()}`, 'Sales']}
+            formatter={(value: number) => [`£${value.toLocaleString()}`, 'Sales']}
           />
           <Bar dataKey="sales" radius={[0, 4, 4, 0]}>
             {displayData.map((entry, index) => (

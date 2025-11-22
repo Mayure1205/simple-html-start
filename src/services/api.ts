@@ -27,7 +27,19 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
   console.log("Fetching data from API...");
 
   try {
-    const response = await fetch('/api/dashboard');
+    // Build query string with date range
+    const params = new URLSearchParams();
+    if (dateRange?.from) {
+      params.append('from', dateRange.from.toISOString().split('T')[0]);
+    }
+    if (dateRange?.to) {
+      params.append('to', dateRange.to.toISOString().split('T')[0]);
+    }
+    
+    const queryString = params.toString();
+    const url = queryString ? `/api/dashboard?${queryString}` : '/api/dashboard';
+    
+    const response = await fetch(url);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: Backend not responding. Make sure Flask is running on port 5000.`);
@@ -36,8 +48,9 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
     const result = await response.json();
 
     if (result.success) {
-      console.log("✅ Data loaded from API!");
       const data = result.data;
+      console.log("✅ Data loaded from API! (Real data from CSV)");
+      console.log("📍 Countries from dataset:", data.countries?.map((c: any) => c.country).join(', '));
 
       // Map API response to DashboardData interface
       return {
@@ -75,6 +88,7 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
   } catch (error) {
     console.error("❌ Error loading API data:", error);
     console.warn("⚠️ BACKEND NOT RUNNING - Using mock data. Start backend with: python app.py");
+    console.warn("⚠️ NOTE: Mock data shows sample UK-based countries. Real data will show actual countries from CSV when backend is running.");
     return getMockData();
   }
 };
@@ -108,40 +122,23 @@ const getMockData = (): DashboardData => {
       { week: '15 Jan', sales: 4623500, lower: 4370000, upper: 4870000 },
     ],
     countries: [
-      { country: 'Maharashtra', sales: 8200000 },
-      { country: 'Karnataka', sales: 6200000 },
-      { country: 'Tamil Nadu', sales: 5800000 },
-      { country: 'Delhi NCR', sales: 4200000 },
-      { country: 'Gujarat', sales: 3800000 },
-      { country: 'Telangana', sales: 3500000 },
-      { country: 'West Bengal', sales: 3100000 },
-      { country: 'Rajasthan', sales: 2800000 },
-      { country: 'Kerala', sales: 2500000 },
-      { country: 'Uttar Pradesh', sales: 2200000 },
-      { country: 'Punjab', sales: 1800000 },
-      { country: 'Haryana', sales: 1500000 },
+      { country: 'United Kingdom', sales: 8200000 },
+      { country: 'Germany', sales: 6200000 },
+      { country: 'France', sales: 5800000 },
+      { country: 'EIRE', sales: 4200000 },
+      { country: 'Spain', sales: 3800000 },
+      { country: 'Netherlands', sales: 3500000 },
+      { country: 'Belgium', sales: 3100000 },
+      { country: 'Switzerland', sales: 2800000 },
+      { country: 'Portugal', sales: 2500000 },
+      { country: 'Australia', sales: 2200000 },
     ],
     products: [
-      { product: 'Ceramic Mug Set', quantity: 8500 },
-      { product: 'Vintage Clock', quantity: 7200 },
-      { product: 'Decorative Candles', quantity: 6800 },
-      { product: 'Photo Frame', quantity: 6400 },
-      { product: 'Tea Set', quantity: 5900 },
-      { product: 'Wall Art', quantity: 5500 },
-      { product: 'Kitchen Utensils', quantity: 5200 },
-      { product: 'Throw Pillows', quantity: 4800 },
-      { product: 'Jewelry Box', quantity: 4500 },
-      { product: 'Plant Pot', quantity: 4200 },
-      { product: 'Vase', quantity: 3800 },
-      { product: 'Table Lamp', quantity: 3500 },
-      { product: 'Coasters', quantity: 3200 },
-      { product: 'Napkin Holder', quantity: 2900 },
-      { product: 'Fruit Basket', quantity: 2600 },
-      { product: 'Key Holder', quantity: 2300 },
-      { product: 'Magazine Rack', quantity: 2000 },
-      { product: 'Bookends', quantity: 1800 },
-      { product: 'Desk Organizer', quantity: 1500 },
-      { product: 'Pen Holder', quantity: 1200 },
+      { product: 'WHITE HANGING HEART T-LIGHT HOLDER', quantity: 8500 },
+      { product: 'REGENCY CAKESTAND 3 TIER', quantity: 7200 },
+      { product: 'JUMBO BAG RED RETROSPOT', quantity: 6800 },
+      { product: 'ASSORTED COLOUR BIRD ORNAMENT', quantity: 6400 },
+      { product: 'PARTY BUNTING', quantity: 5900 },
     ],
     rfm: [
       { segment: 'VIP', count: 1250, color: 'hsl(var(--chart-1))' },
