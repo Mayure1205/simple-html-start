@@ -7,12 +7,16 @@ import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { ExportButton } from '@/components/ExportButton';
 import { HashCard } from '@/components/HashCard';
+import { MetricCard } from '@/components/MetricCard';
+import { OfferCard } from '@/components/OfferCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardData, fetchDashboardData } from '@/services/api';
 import { subDays } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { DateRange } from 'react-day-picker';
+import { TrendingUp, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 const Dashboard = () => {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -36,6 +40,7 @@ const Dashboard = () => {
       setData(dashboardData);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
+      toast.error('Failed to load data. Check if backend is running on http://localhost:5000');
     } finally {
       setIsLoading(false);
     }
@@ -57,13 +62,14 @@ const Dashboard = () => {
         });
         const result = await response.json();
         if (result.success) {
-            // Update local state with the new TX hash
             setData(prev => prev ? { ...prev, tx_hash: result.tx_hash } : null);
+            toast.success('✅ Forecast logged to blockchain successfully!');
         } else {
-            console.error("Blockchain error:", result.error);
+            toast.error('⚠️ Blockchain logging failed. Is Ganache running on port 8545?');
         }
     } catch (error) {
         console.error("Failed to log to blockchain:", error);
+        toast.error('❌ Cannot connect to blockchain. Start Ganache with: ganache-cli -p 8545');
     } finally {
         setIsBlockchainLoading(false);
     }
@@ -101,6 +107,22 @@ const Dashboard = () => {
               <ExportButton data={data} dateRange={date} />
             </div>
           </div>
+
+          {/* Total Forecast Metric */}
+          <MetricCard
+            title="Total 4-Week Forecasted Sales (AI Powered)"
+            value={`£${data.total_forecast.toLocaleString()}`}
+            icon={TrendingUp}
+          />
+
+          {/* Top Segment Offer */}
+          {data.customers[0] && (
+            <OfferCard
+              segment={data.customers[0].segment}
+              offer={data.customers[0].offer}
+              description={`Recommended action for ${data.customers[0].segment} segment - our most valuable customer group with £${data.customers[0].monetary.toLocaleString()} average spend.`}
+            />
+          )}
 
           {/* Forecast Chart */}
           <ForecastLineChart

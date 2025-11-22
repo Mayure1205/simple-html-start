@@ -1,29 +1,6 @@
 import { Card } from '@/components/ui/card';
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 
-// ... (rest of file unchanged until return)
-          <XAxis 
-            dataKey="week" 
-            stroke="hsl(var(--muted-foreground))"
-            fill="hsl(var(--foreground))"
-            fillOpacity={0.1}
-            name="95% Confidence"
-          />
-          <YAxis 
-            stroke="hsl(var(--muted-foreground))"
-            tick={{ fill: 'hsl(var(--foreground))' }}
-            tickFormatter={(value) => `£${(value / 1000).toFixed(0)}k`}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '8px',
-            }}
-            formatter={(value: number) => [`£${value.toLocaleString()}`, '']}
-          />
-          <Legend />
-
 interface DataPoint {
   week: string;
   historical?: number;
@@ -60,7 +37,28 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
           <XAxis 
             dataKey="week" 
             stroke="hsl(var(--muted-foreground))"
-            fill="hsl(var(--destructive))"
+            tick={{ fill: 'hsl(var(--foreground))' }}
+          />
+          <YAxis 
+            stroke="hsl(var(--muted-foreground))"
+            tick={{ fill: 'hsl(var(--foreground))' }}
+            tickFormatter={(value) => `£${(value / 1000).toFixed(0)}k`}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'hsl(var(--card))',
+              border: '1px solid hsl(var(--border))',
+              borderRadius: '8px',
+            }}
+            formatter={(value: number) => [`£${value.toLocaleString()}`, '']}
+          />
+          <Legend />
+          
+          <Area
+            type="monotone"
+            dataKey="upper"
+            stroke="none"
+            fill="hsl(var(--primary))"
             fillOpacity={0.1}
             name="95% Confidence"
           />
@@ -83,10 +81,10 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
           <Line
             type="monotone"
             dataKey="forecast"
-            stroke="hsl(var(--destructive))"
+            stroke="hsl(var(--primary))"
             strokeWidth={3}
             strokeDasharray="5 5"
-            dot={{ fill: 'hsl(var(--destructive))', r: 4 }}
+            dot={{ fill: 'hsl(var(--primary))', r: 4 }}
             name="AI Forecast"
           />
         </ComposedChart>
