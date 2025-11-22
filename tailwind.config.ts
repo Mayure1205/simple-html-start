@@ -31,6 +31,18 @@ export default {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        gold: {
+          DEFAULT: "hsl(var(--gold))",
+          foreground: "hsl(var(--gold-foreground))",
+        },
+        "vip-blue": "hsl(var(--vip-blue))",
+        "loyal-purple": "hsl(var(--loyal-purple))",
+        "at-risk-red": "hsl(var(--at-risk-red))",
+        "new-green": "hsl(var(--new-green))",
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
@@ -57,19 +69,13 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
-        cyber: {
-          purple: "hsl(var(--cyber-purple))",
-          blue: "hsl(var(--cyber-blue))",
-          pink: "hsl(var(--cyber-pink))",
+        chart: {
+          "1": "hsl(var(--chart-1))",
+          "2": "hsl(var(--chart-2))",
+          "3": "hsl(var(--chart-3))",
+          "4": "hsl(var(--chart-4))",
+          "5": "hsl(var(--chart-5))",
         },
-      },
-      backgroundImage: {
-        'gradient-primary': 'var(--gradient-primary)',
-        'gradient-glow': 'var(--gradient-glow)',
-      },
-      boxShadow: {
-        'glow': 'var(--shadow-glow)',
-        'card': 'var(--shadow-card)',
       },
       borderRadius: {
         lg: "var(--radius)",
