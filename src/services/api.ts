@@ -28,6 +28,11 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
 
   try {
     const response = await fetch('/api/dashboard');
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: Backend not responding. Make sure Flask is running on port 5000.`);
+    }
+    
     const result = await response.json();
 
     if (result.success) {
@@ -37,9 +42,11 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
       // Map API response to DashboardData interface
       return {
         total_forecast: data.forecast.totalForecast,
-        historical: data.forecast.historical,
+        historical: data.forecast.historical.map((h: any) => ({ 
+          week: h.date, 
+          sales: h.sales 
+        })),
         forecast: data.forecast.forecast,
-        // Use real data from API
         countries: data.countries.map((c: any) => ({
           country: c.country,
           sales: c.sales
@@ -60,14 +67,14 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
           offer: c.offer
         })),
         hash: data.hash,
-        tx_hash: 'Pending...' // Will be updated by blockchain action
+        tx_hash: 'Pending...'
       };
     } else {
-      throw new Error(result.error);
+      throw new Error(result.error || 'API returned error');
     }
   } catch (error) {
     console.error("❌ Error loading API data:", error);
-    console.log("⚠️ Falling back to mock data");
+    console.warn("⚠️ BACKEND NOT RUNNING - Using mock data. Start backend with: python app.py");
     return getMockData();
   }
 };
