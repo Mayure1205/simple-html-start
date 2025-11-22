@@ -9,6 +9,7 @@ import { CustomerTable } from '@/components/CustomerTable';
 import { HashCard } from '@/components/HashCard';
 import { OfferCard } from '@/components/OfferCard';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
+import { ExportButton } from '@/components/ExportButton';
 import { TrendingUp } from 'lucide-react';
 import { fetchDashboardData, DashboardData } from '@/services/api';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -69,7 +70,10 @@ const Dashboard = () => {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
               Dashboard
             </h1>
-            <DatePickerWithRange date={date} setDate={setDate} />
+            <div className="flex flex-col sm:flex-row gap-3">
+              <DatePickerWithRange date={date} setDate={setDate} />
+              <ExportButton data={data} dateRange={date} />
+            </div>
           </div>
 
           {/* Header Metric */}
