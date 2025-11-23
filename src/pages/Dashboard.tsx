@@ -2,39 +2,97 @@ import { CountryBarChart } from '@/components/charts/CountryBarChart';
 import { ForecastLineChart } from '@/components/charts/ForecastLineChart';
 import { ProductBarChart } from '@/components/charts/ProductBarChart';
 import { RFMDonutChart } from '@/components/charts/RFMDonutChart';
+import { CSVUploadModal } from '@/components/CSVUploadModal';
 import { CustomerTable } from '@/components/CustomerTable';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
 import { ExportButton } from '@/components/ExportButton';
 import { HashCard } from '@/components/HashCard';
 import { MetricCard } from '@/components/MetricCard';
+import { NoDataOverlay } from '@/components/NoDataOverlay';
 import { OfferCard } from '@/components/OfferCard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardData, fetchDashboardData } from '@/services/api';
-import { subDays } from 'date-fns';
-import { TrendingUp } from 'lucide-react';
+import { Database, TrendingUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DateRange } from 'react-day-picker';
 import { toast } from 'sonner';
 
+
 const Dashboard = () => {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // State Management (Yahan hum dashboard ka data aur UI state manage kar rahe hain)
+  const [data, setData] = useState<DashboardData | null>(null); // Main dashboard data
+  const [isLoading, setIsLoading] = useState(true); // Loading spinner state
+  const [currentFile, setCurrentFile] = useState('online_retail_II.csv'); // Currently active CSV file
+  const [isDefaultFile, setIsDefaultFile] = useState(true); // Check if using default dataset
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false); // Modal visibility
+  const [hasNoData, setHasNoData] = useState(false); // Track if date range has no data
+  
+  // Date Range State (Default: 2009-2010 based on dataset)
   const [date, setDate] = useState<DateRange | undefined>({
-    from: subDays(new Date(), 30),
-    to: new Date(),
+    from: new Date('2009-12-01'),
+    to: new Date('2010-12-31'),
   });
 
+
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initial Reset Effect (Runs once on mount/refresh)
   useEffect(() => {
+    const resetBackend = async () => {
+      try {
+        await fetch('/api/reset-file', { method: 'POST' });
+        setIsInitialized(true); // Allow data loading to proceed
+      } catch (e) {
+        console.error("Reset failed:", e);
+        setIsInitialized(true); // Proceed anyway
+      }
+    };
+    resetBackend();
+  }, []);
+
+  // Data Loading Effect
+  useEffect(() => {
+    if (!isInitialized) return; // Wait for reset to complete
+    
     loadData();
+    fetchCurrentFile();
     // Auto-refresh every 60 seconds
     const interval = setInterval(loadData, 60000);
     
     return () => {
         clearInterval(interval);
     };
-  }, [date]); 
+  }, [date, isInitialized]); 
+
+  const fetchCurrentFile = async () => {
+    try {
+      const response = await fetch('/api/current-file');
+      const data = await response.json();
+      if (data.success) {
+        setCurrentFile(data.filename);
+        setIsDefaultFile(data.is_default);
+      }
+    } catch (error) {
+      console.error('Failed to fetch current file:', error);
+    }
+  };
+
+  const handleUploadSuccess = async (dateRange?: { from: string; to: string }) => {
+    // Auto-adjust date picker if date range provided
+    if (dateRange) {
+      setDate({
+        from: new Date(dateRange.from),
+        to: new Date(dateRange.to),
+      });
+    }
+    // Refresh current file info
+    await fetchCurrentFile();
+    // Reload dashboard data with new CSV
+    await loadData();
+  };
+
 
   const loadData = async () => {
     setIsLoading(true);
@@ -42,10 +100,36 @@ const Dashboard = () => {
       const dashboardData = await fetchDashboardData(date);
       if (!dashboardData) throw new Error('No data received');
       setData(dashboardData);
-    } catch (error) {
+      setHasNoData(false);
+    } catch (error: any) {
       console.error('Failed to load dashboard data:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to load data: ${errorMsg}`);
+      
+      // Check if it's a "no data" error (not a real error)
+      if (error.message && error.message.includes('No data available')) {
+        toast.warning(error.message);
+        setHasNoData(true);
+        
+        // If no data exists yet, set empty structure to allow rendering
+        if (!data) {
+          setData({
+            total_forecast: 0,
+            historical: [],
+            forecast: [],
+            countries: [],
+            products: [],
+            rfm: [],
+            customers: [],
+            hash: 'No Data',
+            tx_hash: ''
+          });
+        }
+      } else {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        toast.error(`Failed to load data: ${errorMsg}`);
+        // Clear data on real errors
+        setData(null);
+        setHasNoData(false);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -112,10 +196,42 @@ const Dashboard = () => {
               Dashboard
             </h1>
             <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsUploadModalOpen(true)}
+                className="gap-2"
+              >
+                <Database className="h-4 w-4" />
+                Upload Dataset
+              </Button>
               <DatePickerWithRange date={date} setDate={setDate} />
               <ExportButton data={data} dateRange={date} />
             </div>
           </div>
+
+          {/* Current Dataset Indicator */}
+          <div className="flex items-center gap-2 px-4 py-2 bg-primary/5 border border-primary/10 rounded-lg">
+            <Database className="h-4 w-4 text-primary" />
+            <div className="flex-1">
+              <p className="text-xs text-muted-foreground">Currently Viewing:</p>
+              <p className="text-sm font-medium">{currentFile}</p>
+            </div>
+            {!isDefaultFile && (
+              <span className="text-xs px-2 py-1 bg-green-500/10 text-green-600 rounded-full border border-green-500/20">
+                Custom Dataset
+              </span>
+            )}
+          </div>
+
+          {/* CSV Upload Modal */}
+          <CSVUploadModal
+            isOpen={isUploadModalOpen}
+            onClose={() => setIsUploadModalOpen(false)}
+            onUploadSuccess={handleUploadSuccess}
+            currentFile={currentFile}
+            isDefault={isDefaultFile}
+          />
 
           <div className="space-y-6">
                 {/* Header Metrics */}
@@ -137,22 +253,37 @@ const Dashboard = () => {
                 )}
 
                 {/* Forecast Chart */}
-                <ForecastLineChart
-                    historical={data.historical}
-                    forecast={data.forecast}
-                />
+                <div className="relative">
+                  {hasNoData && <NoDataOverlay />}
+                  <ForecastLineChart
+                      historical={data.historical}
+                      forecast={data.forecast}
+                  />
+                </div>
 
                 {/* Country and Product Charts */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <CountryBarChart data={data.countries} />
-                    <ProductBarChart data={data.products} />
+                    <div className="relative">
+                      {hasNoData && <NoDataOverlay />}
+                      <CountryBarChart data={data.countries} />
+                    </div>
+                    <div className="relative">
+                      {hasNoData && <NoDataOverlay />}
+                      <ProductBarChart data={data.products} />
+                    </div>
                 </div>
 
                 {/* RFM Chart */}
-                <RFMDonutChart data={data.rfm} />
+                <div className="relative">
+                  {hasNoData && <NoDataOverlay />}
+                  <RFMDonutChart data={data.rfm} />
+                </div>
 
                 {/* Customer Table */}
-                <CustomerTable customers={data.customers} />
+                <div className="relative">
+                  {hasNoData && <NoDataOverlay />}
+                  <CustomerTable customers={data.customers} />
+                </div>
 
                 {/* Hash Cards */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -176,10 +307,10 @@ const Dashboard = () => {
                             </p>
                             <Button 
                                 onClick={logToBlockchain} 
-                                disabled={isBlockchainLoading}
+                                disabled={isBlockchainLoading || hasNoData}
                                 className="w-full bg-gradient-to-r from-primary to-accent"
                             >
-                                {isBlockchainLoading ? 'Mining Transaction...' : '⛓️ Log to Blockchain'}
+                                {isBlockchainLoading ? 'Mining Transaction...' : hasNoData ? 'No Data to Log' : '⛓️ Log to Blockchain'}
                             </Button>
                         </div>
                     )}

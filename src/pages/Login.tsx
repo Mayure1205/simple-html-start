@@ -4,13 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import SHA256 from 'crypto-js/sha256'; // Importing SHA256 from crypto-js
+import { useAuth } from '@/contexts/AuthContext';
 import { TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 const Login = () => {
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isCaptchaValid, setIsCaptchaValid] = useState(false);
@@ -20,35 +21,42 @@ const Login = () => {
   const [passwordStrengthBar, setPasswordStrengthBar] = useState(0); // 0-100 scale
   const nav = useNavigate();
   
-  const hardcodedUsername = 'testuser';
-  const hardcodedPassword = 'password123';  // Hardcoded demo password
-  const storedHashedPassword = localStorage.getItem('hashedPassword');  // Retrieve stored hash
+  const hardcodedUsername = 'tester';
 
-  // Password strength validation (more genuine)
-  const checkPasswordStrength = (password) => {
+  // Password strength validation (Ab thoda strict logic lagayenge)
+  const checkPasswordStrength = (password: string) => {
     const length = password.length;
-    const hasNumber = /\d/;
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/;
-    const hasUpperCase = /[A-Z]/;
-    const hasLowerCase = /[a-z]/;
+    const hasNumber = /\d/.test(password);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    const hasUpperCase = /[A-Z]/.test(password);
+    const hasLowerCase = /[a-z]/.test(password);
 
     let strengthScore = 0;
 
-    // Length check
-    if (length >= 8) strengthScore += 25;
-    if (length >= 12) strengthScore += 25;
+    // 1. Length check (Length matter karta hai)
+    if (length > 0) strengthScore += 10; // Typing start kiya
+    if (length >= 8) strengthScore += 20; // Decent length
+    if (length >= 12) strengthScore += 20; // Strong length
 
-    // Check for numbers, uppercase, lowercase, special characters
-    if (hasNumber) strengthScore += 25;
-    if (hasSpecialChar) strengthScore += 25;
-    if (hasUpperCase) strengthScore += 25;
-    if (hasLowerCase) strengthScore += 25;
+    // 2. Complexity check (Mix of characters)
+    if (hasNumber) strengthScore += 10;
+    if (hasSpecialChar) strengthScore += 20;
+    if (hasUpperCase && hasLowerCase) strengthScore += 20;
+
+    // Cap score at 100
+    strengthScore = Math.min(strengthScore, 100);
 
     // Set password strength text and class based on the score
-    if (strengthScore < 50) {
+    if (length === 0) {
+      setPasswordStrength('');
+      setPasswordStrengthBar(0);
+      return;
+    }
+
+    if (strengthScore < 40) {
       setPasswordStrength('Weak password');
       setPasswordStrengthClass('text-red-500');
-    } else if (strengthScore < 75) {
+    } else if (strengthScore < 80) {
       setPasswordStrength('Moderate password');
       setPasswordStrengthClass('text-yellow-500');
     } else {
@@ -60,44 +68,34 @@ const Login = () => {
     setPasswordStrengthBar(strengthScore);
   };
 
-  // Hash the password using SHA-256 (for demo purposes)
-  const hashPassword = (password) => {
-    return SHA256(password).toString();  // Hashing the password with SHA-256
-  };
-
-  // // Check if the user is already logged in by looking for the hashed password in localStorage
-  // useEffect(() => {
-  //   if (storedHashedPassword) {
-  //   nav('/dashboard');  // Redirect to dashboard if already logged in
-  //   }
-  // }, [storedHashedPassword]);
-
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
 
     // Basic validation for fields
     if (!username || !password) {
       toast.error('Please fill in both the username and password.');
+      setIsLoading(false);
       return;
     }
 
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters long.');
+      setIsLoading(false);
       return;
     }
 
     if (!isCaptchaValid) {
       toast.error('Please enter the correct CAPTCHA code');
+      setIsLoading(false);
       return;
     }
 
-    // Check if hardcoded credentials match
-    const hashedPassword = hashPassword(password);
-    if (username === hardcodedUsername && hashedPassword === hashPassword(hardcodedPassword)) {
-      // Store hashed password in localStorage
-      localStorage.setItem('hashedPassword', hashedPassword);
-      toast.success('Login successful!');
-      nav('/dashboard');  // Redirect to the Dashboard
+    // Check if hardcoded credentials match (Direct comparison for reliability)
+    if (username === hardcodedUsername) {
+       // Use AuthContext login to ensure state is updated correctly
+       await login(password);
+       // login function handles navigation and toast
     } else {
       toast.error('Invalid username or password');
     }
@@ -150,15 +148,25 @@ const Login = () => {
               required
               className="bg-background/50"
             />
-            <div className={`mt-1 text-sm ${passwordStrengthClass}`}>
-              {passwordStrength}
-            </div>
-            <div className="h-1 w-full bg-gray-300 mt-2">
-              <div
-                className={`h-1 bg-gradient-to-r from-red-500 to-yellow-500`}
-                style={{ width: `${passwordStrengthBar}%` }}
-              />
-            </div>
+            {password && (
+              <>
+                <div className={`text-xs font-medium ${passwordStrengthClass}`}>
+                  {passwordStrength}
+                </div>
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      passwordStrengthBar < 50 
+                        ? 'bg-red-500' 
+                        : passwordStrengthBar < 75 
+                        ? 'bg-yellow-500' 
+                        : 'bg-green-500'
+                    }`}
+                    style={{ width: `${passwordStrengthBar}%` }}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -183,7 +191,7 @@ const Login = () => {
         </form>
 
         <p className="text-xs text-center text-muted-foreground mt-6">
-          Demo credentials: any username/password will work
+          Authorized Access Only: Use <b>tester</b> / <b>Pass@1205</b>
         </p>
       </Card>
     </div>

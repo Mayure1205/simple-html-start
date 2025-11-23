@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-const hardcodedPasswordHash = SHA256('password123').toString();  // The hash of the hardcoded password
+const hardcodedPasswordHash = SHA256('Pass@1205').toString();  // The hash of the hardcoded password
 
 interface AuthContextType {
   login: (password: string) => Promise<void>;
@@ -24,12 +24,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (storedHashedPassword) {
       if (storedHashedPassword === hardcodedPasswordHash) {
         setUser('authenticated');
-        navigate('/dashboard');
+        // Don't auto-redirect here, let the router handle it or only redirect if on login page
+        if (window.location.pathname === '/') {
+           navigate('/dashboard');
+        }
       } else {
-        navigate('/');
+        // Invalid hash
+        localStorage.removeItem('hashedPassword');
       }
-    } else {
-      navigate('/');
     }
     setIsLoading(false);
   }, [navigate]);

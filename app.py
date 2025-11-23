@@ -1,24 +1,19 @@
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+import os
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+from sklearn.linear_model import LinearRegression
+from statsmodels.tsa.arima.model import ARIMA
 import hashlib
 import json
-import os
 from web3 import Web3
-from sklearn.linear_model import LinearRegression
-import solcx
+from datetime import datetime, timedelta
+import time
 
-# Configure Solidity Compiler
-try:
-    solcx.set_solc_version('0.8.0')
-except:
-    try:
-        solcx.install_solc('0.8.0')
-        solcx.set_solc_version('0.8.0')
-    except Exception as e:
-        print(f"⚠️ Solc setup failed: {e}")
+# Custom modules
+from csv_validator import validate_uploaded_csv
+from exceptions import CSVValidationError
 
 app = Flask(__name__)
 CORS(app)
@@ -29,24 +24,66 @@ CORS(app)
 GANACHE_URL = "http://127.0.0.1:8545"
 CONTRACT_ADDRESS_FILE = "contract_address.txt"
 
+# CSV Upload Configuration
+UPLOAD_FOLDER = 'uploads'
+DEFAULT_CSV = 'online_retail_II.csv'
+CURRENT_CSV_FILE = DEFAULT_CSV  # Global state to track current CSV
+
+# Create uploads folder if it doesn't exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # ==========================================
 # 📊 DATA LOADING & ML
 # ==========================================
 data_cache = {}
 
-def load_data():
-    if 'df' in data_cache:
-        return data_cache['df']
-    print("Loading dataset...")
+
+def load_data(csv_filename=None):
+    """
+    Load CSV data with caching support
+    
+    Args:
+        csv_filename: Optional filename to load. If None, uses CURRENT_CSV_FILE global.
+    
+    Returns:
+        pandas DataFrame or None
+    """
+    global CURRENT_CSV_FILE
+    
+    # Determine which CSV to load
+    if csv_filename is None:
+        csv_filename = CURRENT_CSV_FILE
+    
+    # Check cache (different cache key for each file)
+    cache_key = f'df_{csv_filename}'
+    if cache_key in data_cache:
+        print(f"✅ Using cached data for {csv_filename}")
+        return data_cache[cache_key]
+    
+    print(f"Loading dataset: {csv_filename}...")
     try:
-        csv_path = 'online_retail_II.csv'
-        if not os.path.exists(csv_path):
-            print("❌ CSV file not found!")
-            print(f"   Expected location: {os.path.abspath(csv_path)}")
-            print("   Please download from: https://www.kaggle.com/datasets/mashlyn/online-retail-ii-uci")
+        # Determine file path (check uploads folder first, then root)
+        if os.path.exists(os.path.join(UPLOAD_FOLDER, csv_filename)):
+            csv_path = os.path.join(UPLOAD_FOLDER, csv_filename)
+        elif os.path.exists(csv_filename):
+            csv_path = csv_filename
+        else:
+            print(f"❌ CSV file not found: {csv_filename}")
+            print(f"   Expected location: {os.path.abspath(csv_filename)}")
             return None
         
-        df = pd.read_csv(csv_path, encoding='ISO-8859-1')
+        # Try multiple encodings
+        df = None
+        for encoding in ['ISO-8859-1', 'utf-8', 'cp1252']:
+            try:
+                df = pd.read_csv(csv_path, encoding=encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if df is None:
+            print("❌ Unable to read CSV with any encoding!")
+            return None
         
         # Validate CSV has data
         if df.empty:
@@ -83,14 +120,15 @@ def load_data():
             print("❌ No valid date data after cleaning!")
             return None
         
-        data_cache['df'] = df
-        print(f"✅ Loaded {len(df)} transactions")
+        data_cache[cache_key] = df
+        print(f"✅ Loaded {len(df)} transactions from {csv_filename}")
         return df
     except Exception as e:
         print(f"❌ Error loading CSV: {e}")
         import traceback
         traceback.print_exc()
         return None
+
 
 # Global Cache for ML Model (Train Once, Use Forever)
 ML_MODEL_CACHE = {
@@ -352,12 +390,15 @@ def get_dashboard():
             global ML_MODEL_CACHE
             ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
         
+        
         # Validate we have enough data for forecasting
         if len(df) < 10:
             return jsonify({
                 'success': False,
-                'error': 'Insufficient data for forecasting. Need at least 10 transactions.'
-            }), 500
+                'error': f'No data available for the selected date range ({from_date} to {to_date}). Please adjust the date range to match your dataset.',
+                'current_file': CURRENT_CSV_FILE,
+                'no_data': True
+            }), 400
         
         forecast = generate_ml_forecast(df)
         rfm = generate_rfm(df)
@@ -414,6 +455,125 @@ def log_blockchain():
     except Exception as e:
         print(f"Blockchain API Error: {e}")
         return jsonify({'success': False, 'error': f'Blockchain error: {str(e)}'}), 500
+
+# ==========================================
+# 📤 CSV UPLOAD ENDPOINTS
+# ==========================================
+@app.route('/api/upload-csv', methods=['POST'])
+def upload_csv():
+    """Upload and validate custom CSV file"""
+    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
+    
+    try:
+        # Check if file is in request
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+        
+        # Generate safe filename
+        filename = file.filename
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        # Validate and save CSV
+        try:
+            df = validate_uploaded_csv(file, filepath)
+            
+            # Update current CSV file
+            CURRENT_CSV_FILE = filename
+            
+            # Clear all caches to force reload
+            data_cache.clear()
+            ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+            
+            # Get date range from uploaded CSV
+            min_date = df['InvoiceDate'].min()
+            max_date = df['InvoiceDate'].max()
+            
+            return jsonify({
+                'success': True,
+                'filename': filename,
+                'rows': len(df),
+                'date_range': {
+                    'from': min_date.strftime('%Y-%m-%d'),
+                    'to': max_date.strftime('%Y-%m-%d')
+                },
+                'message': f'CSV uploaded successfully! {len(df)} transactions loaded.'
+            })
+            
+        except CSVValidationError as e:
+            # Validation failed - return user-friendly error
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 400
+            
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
+
+@app.route('/api/remove-upload', methods=['POST'])
+def remove_upload():
+    """Remove uploaded CSV and revert to default"""
+    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
+    
+    try:
+        data = request.json
+        filename = data.get('filename')
+        
+        if not filename:
+            return jsonify({'success': False, 'error': 'Filename required'}), 400
+        
+        # Don't allow removing default file
+        if filename == DEFAULT_CSV:
+            return jsonify({'success': False, 'error': 'Cannot remove default dataset'}), 400
+        
+        # Remove file if exists
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"✅ Removed uploaded file: {filename}")
+        
+        # Revert to default
+        CURRENT_CSV_FILE = DEFAULT_CSV
+        
+        # Clear all caches
+        data_cache.clear()
+        ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+        
+        return jsonify({
+            'success': True,
+            'message': 'Reverted to default dataset',
+            'current_file': DEFAULT_CSV
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reset-file', methods=['POST'])
+def reset_file():
+    """Force reset to default file (used on page load)"""
+    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
+    CURRENT_CSV_FILE = DEFAULT_CSV
+    data_cache.clear()
+    ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+    return jsonify({'success': True, 'message': 'Reset to default file'})
+        
+
+
+@app.route('/api/current-file', methods=['GET'])
+def get_current_file():
+    """Get currently active CSV filename"""
+    return jsonify({
+        'success': True,
+        'filename': CURRENT_CSV_FILE,
+        'is_default': CURRENT_CSV_FILE == DEFAULT_CSV
+    })
 
 if __name__ == '__main__':
     load_data()

@@ -35,17 +35,25 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
     if (dateRange?.to) {
       params.append('to', dateRange.to.toISOString().split('T')[0]);
     }
-    
+
     const queryString = params.toString();
     const url = queryString ? `/api/dashboard?${queryString}` : '/api/dashboard';
-    
+
     const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: Backend not responding. Make sure Flask is running on port 5000.`);
+    const text = await response.text();
+
+    let result;
+    try {
+      result = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.error("Failed to parse JSON:", text);
+      throw new Error(`Invalid JSON response from server: ${text.substring(0, 100)}...`);
     }
-    
-    const result = await response.json();
+
+    if (!response.ok) {
+      // Backend returned error (400, 500, etc.)
+      throw new Error(result.error || `HTTP ${response.status}: Backend error`);
+    }
 
     if (result.success) {
       const data = result.data;
@@ -55,9 +63,9 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
       // Map API response to DashboardData interface
       return {
         total_forecast: data.forecast.totalForecast,
-        historical: data.forecast.historical.map((h: any) => ({ 
-          week: h.date, 
-          sales: h.sales 
+        historical: data.forecast.historical.map((h: any) => ({
+          week: h.date,
+          sales: h.sales
         })),
         forecast: data.forecast.forecast,
         countries: data.countries.map((c: any) => ({
@@ -83,11 +91,13 @@ export const fetchDashboardData = async (dateRange?: DateRange): Promise<Dashboa
         tx_hash: 'Pending...'
       };
     } else {
+      // Backend returned error - throw it to be caught by Dashboard
       throw new Error(result.error || 'API returned error');
     }
   } catch (error) {
     console.error("❌ Error loading API data:", error);
-    console.warn("⚠️ BACKEND NOT RUNNING - Using mock data. Start backend with: python app.py");
+    // Re-throw the error instead of falling back to mock data
+    throw error;
     console.warn("⚠️ NOTE: Mock data shows sample UK-based countries. Real data will show actual countries from CSV when backend is running.");
     return getMockData();
   }

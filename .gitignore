@@ -26,3 +26,7 @@ dist-ssr
 "dist/" 
 "__pycache__/" 
 ".env" 
+uploads/
+contract_address.txt
+venv/
+*.pyc
