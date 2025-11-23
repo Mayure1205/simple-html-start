@@ -79,10 +79,11 @@ A full-stack retail analytics platform that combines **AI/ML sales forecasting**
 ### ✅ **Core Features**
 
 1. **AI Sales Forecasting**
-   - 4-week future sales prediction
+   - 4-week future sales prediction using Linear Regression
    - Historical vs. forecast comparison
    - Confidence intervals (85%-115%)
-   - Christmas/holiday boost logic
+   - Christmas/holiday boost logic (40% increase Dec 18-31)
+   - Model caching for stable predictions
 
 2. **RFM Customer Segmentation**
    - Automatic customer scoring (Recency, Frequency, Monetary)
@@ -93,8 +94,10 @@ A full-stack retail analytics platform that combines **AI/ML sales forecasting**
 3. **Blockchain Verification**
    - SHA-256 hash generation for data integrity
    - Smart contract deployment (ForecastLogger.sol)
-   - Immutable forecast logging on Ethereum
+   - **Duplicate prevention:** Same forecast hash can only be logged once
+   - Immutable forecast logging on Ethereum (Ganache)
    - Transaction hash tracking
+   - Handles negative sales (returns) by converting to absolute values
 
 4. **Interactive Dashboard**
    - Real-time data visualization
@@ -111,7 +114,9 @@ A full-stack retail analytics platform that combines **AI/ML sales forecasting**
 
 6. **Secure Authentication**
    - Login with CAPTCHA
-   - Session management
+   - **SHA-256 password hashing** for security
+   - Password strength indicator
+   - Session management with localStorage
    - Protected routes
 
 ### 🎁 **Bonus Features**
@@ -121,6 +126,7 @@ A full-stack retail analytics platform that combines **AI/ML sales forecasting**
 - Glassmorphism UI design
 - Responsive layout (mobile-friendly)
 - Dark/Light theme support
+- Solidity compiler auto-installation
 
 ---
 
