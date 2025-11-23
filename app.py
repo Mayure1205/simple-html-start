@@ -10,6 +10,16 @@ from web3 import Web3
 from sklearn.linear_model import LinearRegression
 import solcx
 
+# Configure Solidity Compiler
+try:
+    solcx.set_solc_version('0.8.0')
+except:
+    try:
+        solcx.install_solc('0.8.0')
+        solcx.set_solc_version('0.8.0')
+    except Exception as e:
+        print(f"⚠️ Solc setup failed: {e}")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -292,7 +302,11 @@ def log_to_blockchain_real(data_hash, total_sales):
             # If function doesn't exist (old contract), continue anyway
             pass
         
-        tx_hash = contract.functions.logForecast(data_hash, int(total_sales)).transact({'from': w3.eth.accounts[0]})
+        # Convert to absolute value to handle negative sales (returns)
+        # uint256 only accepts positive numbers
+        total_sales_abs = abs(int(total_sales))
+        
+        tx_hash = contract.functions.logForecast(data_hash, total_sales_abs).transact({'from': w3.eth.accounts[0]})
         return w3.to_hex(tx_hash)
     except Exception as e:
         print(f"Blockchain Error: {e}")
