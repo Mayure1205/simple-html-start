@@ -30,3 +30,4 @@ uploads/
 contract_address.txt
 venv/
 *.pyc
+trash/ 
