@@ -2,12 +2,13 @@ import { Card } from '@/components/ui/card';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface Props {
-  data: Array<{ country: string; sales: number }>;
+  data: Array<{ country: string; value: number }>;
+  valueLabel: string;
 }
 
-export const CountryBarChart = ({ data }: Props) => {
+export const CountryBarChart = ({ data, valueLabel }: Props) => {
   // Sort data by sales descending
-  const sortedData = [...data].sort((a, b) => b.sales - a.sales);
+  const sortedData = [...data].sort((a, b) => b.value - a.value);
 
   // Get Top 5 and Bottom 5
   const top5 = sortedData.slice(0, 5);
@@ -26,7 +27,7 @@ export const CountryBarChart = ({ data }: Props) => {
             type="number"
             stroke="hsl(var(--muted-foreground))"
             tick={{ fill: 'hsl(var(--foreground))' }}
-            tickFormatter={(value) => `£${(value / 100000).toFixed(1)}L`}
+            tickFormatter={(value) => value.toLocaleString()}
           />
           <YAxis
             type="category"
@@ -41,15 +42,26 @@ export const CountryBarChart = ({ data }: Props) => {
               border: '1px solid hsl(var(--border))',
               borderRadius: '8px',
             }}
-            formatter={(value: number) => [`£${value.toLocaleString()}`, 'Sales']}
+            formatter={(value: number) => [`${value.toLocaleString()} ${valueLabel}`, valueLabel]}
           />
-          <Bar dataKey="sales" radius={[0, 4, 4, 0]}>
-            {displayData.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={index < 5 ? 'hsl(var(--chart-2))' : 'hsl(var(--destructive))'}
-              />
-            ))}
+          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+            {displayData.map((entry, index) => {
+              // Define a palette of colors for the bars
+              const colors = [
+                'hsl(var(--chart-1))', // Blue
+                'hsl(var(--chart-2))', // Green
+                'hsl(var(--chart-3))', // Yellow
+                'hsl(var(--chart-4))', // Orange
+                'hsl(var(--chart-5))', // Purple
+              ];
+              const colorIndex = index % colors.length;
+              return (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={colors[colorIndex]}
+                />
+              );
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>

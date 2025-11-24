@@ -23,6 +23,8 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     return `${from}_to_${to}`;
   };
 
+  const metricLabel = data.metric_label || 'Metric';
+
   const exportToCSV = () => {
     const dateRangeStr = formatDateRange();
     
@@ -30,31 +32,31 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     const forecastData = [
       ['Sales Forecast Report'],
       [`Date Range: ${dateRange?.from ? format(dateRange.from, 'MMM dd, yyyy') : 'All Time'} - ${dateRange?.to ? format(dateRange.to, 'MMM dd, yyyy') : format(new Date(), 'MMM dd, yyyy')}`],
-      [`Total Forecast: £${data.total_forecast.toLocaleString()}`],
+      [`Total Forecast: ${data.total_forecast.toLocaleString()} ${metricLabel}`],
       [],
       ['Historical Data'],
-      ['Week', 'Sales (£)'],
+      ['Week', metricLabel],
       ...data.historical.map(h => [h.week, h.sales]),
       [],
       ['Forecast Data'],
-      ['Week', 'Sales (£)', 'Lower Bound (£)', 'Upper Bound (£)'],
+      ['Week', metricLabel, `Lower Bound (${metricLabel})`, `Upper Bound (${metricLabel})`],
       ...data.forecast.map(f => [f.week, f.sales, f.lower, f.upper]),
       [],
-      ['Country Sales'],
-      ['Country', 'Sales (£)'],
-      ...data.countries.map(c => [c.country, c.sales]),
+      ['Region Performance'],
+      ['Country', metricLabel],
+      ...data.countries.map(c => [c.country, c.value]),
       [],
-      ['Product Quantities'],
-      ['Product', 'Quantity'],
-      ...data.products.map(p => [p.product, p.quantity]),
+      ['Product Performance'],
+      ['Product', metricLabel],
+      ...data.products.map(p => [p.product, p.value]),
       [],
       ['Customer Segments (RFM)'],
       ['Segment', 'Count'],
-      ...data.rfm.map(r => [r.segment, r.count]),
+      ...Object.entries(data.rfm.segmentCounts).map(([segment, count]) => [segment, count]),
       [],
       ['Top Customers'],
-      ['Customer ID', 'Monetary Value (£)', 'Segment', 'Recommended Offer'],
-      ...data.customers.map(c => [c.id, c.monetary, c.segment, c.offer]),
+      ['Customer ID', `${metricLabel}`, 'Segment', 'Recommended Offer'],
+      ...data.customers.map(c => [c.id, c.amount, c.segment, c.offer]),
     ];
 
     // Convert to CSV
@@ -76,7 +78,7 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     const summaryData = [
       ['Sales Forecast Report'],
       [`Date Range: ${dateRange?.from ? format(dateRange.from, 'MMM dd, yyyy') : 'All Time'} - ${dateRange?.to ? format(dateRange.to, 'MMM dd, yyyy') : format(new Date(), 'MMM dd, yyyy')}`],
-      [`Total Forecast: £${data.total_forecast.toLocaleString()}`],
+      [`Total Forecast: ${data.total_forecast.toLocaleString()} ${metricLabel}`],
       [],
       ['Report Generated:', format(new Date(), 'MMM dd, yyyy HH:mm:ss')],
       ['Data Hash:', data.hash],
@@ -88,11 +90,11 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     // Historical & Forecast sheet
     const forecastData = [
       ['Historical Data'],
-      ['Week', 'Sales (£)'],
+      ['Week', metricLabel],
       ...data.historical.map(h => [h.week, h.sales]),
       [],
       ['Forecast Data'],
-      ['Week', 'Sales (£)', 'Lower Bound (£)', 'Upper Bound (£)'],
+      ['Week', metricLabel, `Lower Bound (${metricLabel})`, `Upper Bound (${metricLabel})`],
       ...data.forecast.map(f => [f.week, f.sales, f.lower, f.upper]),
     ];
     const forecastSheet = XLSX.utils.aoa_to_sheet(forecastData);
@@ -100,16 +102,16 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
 
     // Country sales sheet
     const countryData = [
-      ['Country', 'Sales (£)'],
-      ...data.countries.map(c => [c.country, c.sales]),
+      ['Country', metricLabel],
+      ...data.countries.map(c => [c.country, c.value]),
     ];
     const countrySheet = XLSX.utils.aoa_to_sheet(countryData);
     XLSX.utils.book_append_sheet(wb, countrySheet, 'Country Sales');
 
     // Product quantities sheet
     const productData = [
-      ['Product', 'Quantity'],
-      ...data.products.map(p => [p.product, p.quantity]),
+      ['Product', metricLabel],
+      ...data.products.map(p => [p.product, p.value]),
     ];
     const productSheet = XLSX.utils.aoa_to_sheet(productData);
     XLSX.utils.book_append_sheet(wb, productSheet, 'Products');
@@ -117,15 +119,15 @@ export const ExportButton = ({ data, dateRange }: ExportButtonProps) => {
     // RFM segments sheet
     const rfmData = [
       ['Segment', 'Count'],
-      ...data.rfm.map(r => [r.segment, r.count]),
+      ...Object.entries(data.rfm.segmentCounts).map(([segment, count]) => [segment, count]),
     ];
     const rfmSheet = XLSX.utils.aoa_to_sheet(rfmData);
     XLSX.utils.book_append_sheet(wb, rfmSheet, 'Customer Segments');
 
     // Top customers sheet
     const customersData = [
-      ['Customer ID', 'Monetary Value (£)', 'Segment', 'Recommended Offer'],
-      ...data.customers.map(c => [c.id, c.monetary, c.segment, c.offer]),
+      ['Customer ID', metricLabel, 'Segment', 'Recommended Offer'],
+      ...data.customers.map(c => [c.id, c.amount, c.segment, c.offer]),
     ];
     const customersSheet = XLSX.utils.aoa_to_sheet(customersData);
     XLSX.utils.book_append_sheet(wb, customersSheet, 'Top Customers');

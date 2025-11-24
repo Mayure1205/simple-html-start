@@ -1,10 +1,9 @@
 import os
 import pandas as pd
 import numpy as np
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from sklearn.linear_model import LinearRegression
-from statsmodels.tsa.arima.model import ARIMA
 import hashlib
 import json
 from web3 import Web3
@@ -14,6 +13,8 @@ import time
 # Custom modules
 from csv_validator import validate_uploaded_csv
 from exceptions import CSVValidationError
+from field_detector import detect_fields, validate_and_clean_data
+from dynamic_rca import analyze_root_cause_dynamic
 
 app = Flask(__name__)
 CORS(app)
@@ -26,8 +27,8 @@ CONTRACT_ADDRESS_FILE = "contract_address.txt"
 
 # CSV Upload Configuration
 UPLOAD_FOLDER = 'uploads'
-DEFAULT_CSV = 'online_retail_II.csv'
-CURRENT_CSV_FILE = DEFAULT_CSV  # Global state to track current CSV
+CURRENT_CSV_FILE = None  # No default - force user to upload CSV
+CURRENT_MAPPING = {}  # Stores column mapping: {'date': '...', 'value': '...'}
 
 # Create uploads folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -38,24 +39,33 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 data_cache = {}
 
 
+def _format_metric_label(column_name):
+    """Convert raw column name to a human-friendly label"""
+    if not column_name:
+        return "Metric"
+    label = column_name.replace("_", " ").replace("-", " ").strip()
+    return label.title() if label else "Metric"
+
+
 def load_data(csv_filename=None):
     """
-    Load CSV data with caching support
-    
-    Args:
-        csv_filename: Optional filename to load. If None, uses CURRENT_CSV_FILE global.
-    
-    Returns:
-        pandas DataFrame or None
+    Load CSV data with caching support and dynamic mapping
     """
-    global CURRENT_CSV_FILE
+    global CURRENT_CSV_FILE, CURRENT_MAPPING
     
     # Determine which CSV to load
     if csv_filename is None:
         csv_filename = CURRENT_CSV_FILE
     
-    # Check cache (different cache key for each file)
-    cache_key = f'df_{csv_filename}'
+    # If still None, no CSV uploaded yet
+    if csv_filename is None:
+        print("❌ No CSV file uploaded yet")
+        return None
+    
+    # Check cache (different cache key for each file AND mapping)
+    mapping_key = json.dumps(CURRENT_MAPPING, sort_keys=True)
+    cache_key = f'df_{csv_filename}_{mapping_key}'
+    
     if cache_key in data_cache:
         print(f"✅ Using cached data for {csv_filename}")
         return data_cache[cache_key]
@@ -69,7 +79,6 @@ def load_data(csv_filename=None):
             csv_path = csv_filename
         else:
             print(f"❌ CSV file not found: {csv_filename}")
-            print(f"   Expected location: {os.path.abspath(csv_filename)}")
             return None
         
         # Try multiple encodings
@@ -90,28 +99,36 @@ def load_data(csv_filename=None):
             print("❌ CSV file is empty!")
             return None
         
-        # Dynamic Column Mapping
-        col_map = {
-            'InvoiceNo': next((c for c in df.columns if 'invoice' in c.lower()), 'InvoiceNo'),
-            'CustomerID': next((c for c in df.columns if 'customer' in c.lower() and 'id' in c.lower()), 'Customer ID'),
-            'Price': next((c for c in df.columns if 'price' in c.lower() or 'unit' in c.lower()), 'Price'),
-            'Quantity': next((c for c in df.columns if 'quantity' in c.lower()), 'Quantity'),
-            'InvoiceDate': next((c for c in df.columns if 'date' in c.lower()), 'InvoiceDate'),
-            'Country': next((c for c in df.columns if 'country' in c.lower()), 'Country'),
-            'Description': next((c for c in df.columns if 'description' in c.lower() or 'product' in c.lower()), 'Description')
-        }
-        
-        df = df.rename(columns={v: k for k, v in col_map.items()})
-        
+        # ==========================================
+        # 🧠 DYNAMIC MAPPING LOGIC
+        # ==========================================
+        if CURRENT_MAPPING:
+            print(f"Applying mapping: {CURRENT_MAPPING}")
+            
+            # 1. Rename required columns
+            rename_map = {
+                CURRENT_MAPPING['date']: 'InvoiceDate',
+                CURRENT_MAPPING['value']: 'TotalAmount'
+            }
+            
+            # 2. Rename optional columns if present
+            if 'product' in CURRENT_MAPPING and CURRENT_MAPPING['product'] and CURRENT_MAPPING['product'] != 'none':
+                rename_map[CURRENT_MAPPING['product']] = 'Description'
+            
+            if 'region' in CURRENT_MAPPING and CURRENT_MAPPING['region'] and CURRENT_MAPPING['region'] != 'none':
+                rename_map[CURRENT_MAPPING['region']] = 'Country'
+                
+            if 'customer' in CURRENT_MAPPING and CURRENT_MAPPING['customer'] and CURRENT_MAPPING['customer'] != 'none':
+                rename_map[CURRENT_MAPPING['customer']] = 'CustomerID'
+                
+            df = df.rename(columns=rename_map)
+            
+        # Ensure InvoiceNo exists (needed for RFM frequency)
+        if 'InvoiceNo' not in df.columns:
+            df['InvoiceNo'] = df.index.astype(str)
+
         # Cleaning
-        df = df.dropna(subset=['CustomerID'])
-        if df.empty:
-            print("❌ No valid customer data after cleaning!")
-            return None
-        
-        df['InvoiceNo'] = df['InvoiceNo'].astype(str)
-        df = df[~df['InvoiceNo'].str.startswith('C')]
-        df['TotalAmount'] = df['Quantity'] * df['Price']
+        df['TotalAmount'] = pd.to_numeric(df['TotalAmount'], errors='coerce').fillna(0)
         df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'], errors='coerce')
         
         # Remove invalid dates
@@ -130,22 +147,10 @@ def load_data(csv_filename=None):
         return None
 
 
-# Global Cache for ML Model (Train Once, Use Forever)
-ML_MODEL_CACHE = {
-    'forecast_data': None,
-    'model': None,
-    'metrics': None
-}
-
-def generate_ml_forecast(df):
-    """Generate forecast using Linear Regression"""
-    global ML_MODEL_CACHE
-    
-    # Return cached result if available
-    if ML_MODEL_CACHE['forecast_data'] is not None:
-        print("✅ Using cached model")
-        return ML_MODEL_CACHE['forecast_data']
-
+def generate_ml_forecast(df, horizon=4):
+    """
+    Generate forecast using Linear Regression with accuracy measurement
+    """
     # Aggregate weekly sales
     weekly = df.set_index('InvoiceDate')['TotalAmount'].resample('W').sum().reset_index()
     
@@ -153,26 +158,81 @@ def generate_ml_forecast(df):
     weekly = weekly[weekly['TotalAmount'] > 100]
     
     if len(weekly) < 4:
-        raise ValueError("Insufficient weekly data for forecasting.")
+        # Fallback for small datasets: Try Daily
+        weekly = df.set_index('InvoiceDate')['TotalAmount'].resample('D').sum().reset_index()
+        if len(weekly) < 4:
+             raise ValueError("Insufficient data for forecasting (need at least 4 periods).")
     
     weekly['WeekNum'] = range(len(weekly))
     
-    # Prepare data
-    X = weekly[['WeekNum']].values
-    y = weekly['TotalAmount'].values
+    # ==========================================
+    # ACCURACY MEASUREMENT: Train/Test Split
+    # ==========================================
+    train_size = int(len(weekly) * 0.8)  # 80% train, 20% test
+    train_data = weekly[:train_size]
+    test_data = weekly[train_size:]
     
-    # Train Model on ALL data
+    # Prepare training data
+    X_train = train_data[['WeekNum']].values
+    y_train = train_data['TotalAmount'].values
+    
+    # Train Model
     model = LinearRegression()
-    model.fit(X, y)
+    model.fit(X_train, y_train)
     
-    # Predict next 4 weeks
+    # Validate on test set (if enough data)
+    accuracy_metrics = {}
+    if len(test_data) > 0:
+        X_test = test_data[['WeekNum']].values
+        y_test = test_data['TotalAmount'].values
+        y_pred = model.predict(X_test)
+        
+        # Calculate MAPE (Mean Absolute Percentage Error)
+        mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+        
+        # Calculate RMSE (Root Mean Squared Error)
+        rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
+        
+        # Calculate R² Score
+        from sklearn.metrics import r2_score
+        r2 = r2_score(y_test, y_pred)
+        
+        accuracy_metrics = {
+            'mape': round(float(mape), 2),
+            'rmse': round(float(rmse), 2),
+            'r2': round(float(r2), 3),
+            'accuracy': round(float(100 - mape), 2),  # Accuracy = 100 - MAPE
+            'confidence': 'HIGH' if mape < 15 else 'MEDIUM' if mape < 25 else 'LOW'
+        }
+        print(f"📊 Model Accuracy: {accuracy_metrics['accuracy']}% (MAPE: {mape:.2f}%)")
+    else:
+        # Not enough data for validation
+        accuracy_metrics = {
+            'mape': 0,
+            'rmse': 0,
+            'r2': 0,
+            'accuracy': 0,
+            'confidence': 'UNKNOWN'
+        }
+    
+    # Predict next N weeks (based on horizon)
     last_week_num = weekly['WeekNum'].max()
-    future_weeks = np.array([[last_week_num + i] for i in range(1, 5)])
+    future_weeks = np.array([[last_week_num + i] for i in range(1, horizon + 1)])
     predictions = model.predict(future_weeks)
     
     # Format Forecast
     last_date = weekly['InvoiceDate'].max()
+    last_actual_value = weekly.iloc[-1]['TotalAmount']
+
     forecast = []
+    
+    # Add the last historical point as the first forecast point (to connect the lines)
+    forecast.append({
+        'week': last_date.strftime('%d %b'),
+        'sales': round(last_actual_value, 2),
+        'lower': round(last_actual_value, 2),
+        'upper': round(last_actual_value, 2)
+    })
     
     for i, pred in enumerate(predictions):
         date = last_date + timedelta(weeks=i+1)
@@ -197,172 +257,297 @@ def generate_ml_forecast(df):
         del h['TotalAmount']
         del h['WeekNum']
         
-    # Store in Cache
+    # Store result
     result = {
         'historical': historical,
         'forecast': forecast,
-        'totalForecast': sum([f['sales'] for f in forecast])
+        'totalForecast': sum([f['sales'] for f in forecast]),
+        'accuracy': accuracy_metrics
     }
-    
-    ML_MODEL_CACHE['forecast_data'] = result
-    ML_MODEL_CACHE['model'] = model
-    
     return result
+
+def analyze_root_cause(df):
+    """
+    Analyze WHY sales changed.
+    Compares Last 4 Weeks vs Previous 4 Weeks.
+    """
+    try:
+        # 1. Setup Dates
+        last_date = df['InvoiceDate'].max()
+        cutoff_current = last_date - timedelta(days=28)
+        cutoff_previous = cutoff_current - timedelta(days=28)
+        
+        # 2. Split Data
+        current_period = df[df['InvoiceDate'] > cutoff_current]
+        previous_period = df[(df['InvoiceDate'] <= cutoff_current) & (df['InvoiceDate'] > cutoff_previous)]
+        
+        if current_period.empty or previous_period.empty:
+            return None
+
+        # 3. Calculate Totals
+        curr_total = current_period['TotalAmount'].sum()
+        prev_total = previous_period['TotalAmount'].sum()
+        change = curr_total - prev_total
+        pct_change = (change / prev_total) * 100 if prev_total > 0 else 0
+        
+        # 4. Analyze by Product (Top Drivers)
+        curr_prod = current_period.groupby('Description')['TotalAmount'].sum()
+        prev_prod = previous_period.groupby('Description')['TotalAmount'].sum()
+        
+        # Align indexes to calculate variance
+        all_products = curr_prod.index.union(prev_prod.index)
+        curr_prod = curr_prod.reindex(all_products, fill_value=0)
+        prev_prod = prev_prod.reindex(all_products, fill_value=0)
+        
+        prod_variance = (curr_prod - prev_prod).sort_values(ascending=False)
+        
+        # Top Gainer & Loser
+        top_gainer = prod_variance.index[0]
+        top_gainer_amt = prod_variance.iloc[0]
+        
+        top_loser = prod_variance.index[-1]
+        top_loser_amt = prod_variance.iloc[-1]
+        
+        # 5. Analyze by Country
+        curr_country = current_period.groupby('Country')['TotalAmount'].sum()
+        prev_country = previous_period.groupby('Country')['TotalAmount'].sum()
+        
+        all_countries = curr_country.index.union(prev_country.index)
+        curr_country = curr_country.reindex(all_countries, fill_value=0)
+        prev_country = prev_country.reindex(all_countries, fill_value=0)
+        
+        country_variance = (curr_country - prev_country).sort_values(ascending=False)
+        top_country_change = country_variance.index[0] if abs(country_variance.iloc[0]) > abs(country_variance.iloc[-1]) else country_variance.index[-1]
+        
+        # 6. Generate Insight
+        status = "Growth" if change > 0 else "Decline"
+        insight = f"Value showed {status} of {pct_change:.1f}% ({abs(change):,.0f}). "
+        
+        reasons = []
+        if top_gainer_amt > 0:
+            reasons.append(f"driven by '{top_gainer}' (+{top_gainer_amt:,.0f})")
+        if top_loser_amt < 0:
+            reasons.append(f"offset by drop in '{top_loser}' ({top_loser_amt:,.0f})")
+            
+        explanation = insight + " Mainly " + ", and ".join(reasons) + "."
+        
+        return {
+            'period': 'Last 28 Days vs Previous',
+            'change_amount': round(change, 2),
+            'change_percent': round(pct_change, 2),
+            'top_gainer': {'name': top_gainer, 'amount': round(top_gainer_amt, 2)},
+            'top_loser': {'name': top_loser, 'amount': round(top_loser_amt, 2)},
+            'top_country': top_country_change,
+            'explanation': explanation
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in RCA: {e}")
+        return None
 
 def get_top_stats(df):
     """Get Top Countries and Products"""
-    # Top Countries
-    countries = df.groupby('Country')['TotalAmount'].sum().nlargest(5).reset_index()
-    countries_list = [{'country': r['Country'], 'sales': round(r['TotalAmount'], 2)} for _, r in countries.iterrows()]
-    
-    # Top Products
-    products = df.groupby('Description')['Quantity'].sum().nlargest(5).reset_index()
-    products_list = [{'product': r['Description'], 'quantity': int(r['Quantity'])} for _, r in products.iterrows()]
-    
-    return countries_list, products_list
+    countries_data = []
+    products_data = []
 
-def generate_rfm(df):
-    """Generate RFM Segments"""
-    snapshot_date = df['InvoiceDate'].max() + timedelta(days=1)
+    if 'Country' in df.columns:
+        countries = df.groupby('Country')['TotalAmount'].sum().sort_values(ascending=False).head(5)
+        countries_data = [{'country': c, 'value': round(s, 2)} for c, s in countries.items()]
+
+    if 'Description' in df.columns:
+        products = df.groupby('Description')['TotalAmount'].sum().sort_values(ascending=False).head(5)
+        products_data = [{'product': p, 'value': round(q, 2)} for p, q in products.items()]
+
+    return countries_data, products_data
+
+def calculate_rfm(df, has_customer_dimension=True):
+    """Calculate RFM Segments"""
+    if not has_customer_dimension or 'CustomerID' not in df.columns:
+        return {
+            'available': False,
+            'segmentCounts': {},
+            'topCustomers': []
+        }
+
+    # Calculate RFM metrics
+    current_date = df['InvoiceDate'].max()
+    
     rfm = df.groupby('CustomerID').agg({
-        'InvoiceDate': lambda x: (snapshot_date - x.max()).days,
-        'InvoiceNo': 'nunique',
+        'InvoiceDate': lambda x: (current_date - x.max()).days,
+        'InvoiceNo': 'count',
         'TotalAmount': 'sum'
+    }).rename(columns={
+        'InvoiceDate': 'Recency',
+        'InvoiceNo': 'Frequency',
+        'TotalAmount': 'Monetary'
     })
-    rfm.columns = ['Recency', 'Frequency', 'Monetary']
     
-    # Quantile Scoring (Better than hardcoded)
+    # Score RFM (1-5 scale)
     try:
-        rfm['R'] = pd.qcut(rfm['Recency'], 4, labels=[4, 3, 2, 1])
-        rfm['F'] = pd.qcut(rfm['Frequency'].rank(method='first'), 4, labels=[1, 2, 3, 4])
-        rfm['M'] = pd.qcut(rfm['Monetary'], 4, labels=[1, 2, 3, 4])
-    except:
-        # Fallback if not enough data
-        rfm['R'] = 3
-        rfm['F'] = 3
-        rfm['M'] = 3
-
-    def segment(row):
-        score = int(row['R']) * 100 + int(row['F']) * 10 + int(row['M'])
-        if score >= 444: return "Champions"
-        if score >= 333: return "Loyal Customers"
-        if score >= 222: return "Potential Loyalists"
-        if int(row['R']) == 1: return "Lost"
-        if int(row['R']) == 2: return "At Risk"
-        return "Standard"
-
-    rfm['Segment'] = rfm.apply(segment, axis=1)
+        rfm['R_Score'] = pd.qcut(rfm['Recency'], 5, labels=[5, 4, 3, 2, 1])
+        rfm['F_Score'] = pd.qcut(rfm['Frequency'].rank(method='first'), 5, labels=[1, 2, 3, 4, 5])
+        rfm['M_Score'] = pd.qcut(rfm['Monetary'], 5, labels=[1, 2, 3, 4, 5])
+    except Exception:
+        # Fallback for small datasets
+        return {
+            'available': True,
+            'segmentCounts': {},
+            'topCustomers': []
+        }
     
-    # Top 10 Customers
-    top = rfm.nlargest(10, 'Monetary').reset_index()
-    top_list = []
-    offer_map = {'Champions': '🏆 15% VIP', 'Loyal Customers': '💎 10% Bonus', 'At Risk': '⚠️ 20% WinBack'}
+    rfm['RFM_Score'] = rfm['R_Score'].astype(str) + rfm['F_Score'].astype(str) + rfm['M_Score'].astype(str)
     
-    for _, row in top.iterrows():
-        top_list.append({
-            'id': str(int(row['CustomerID'])),
+    # Define Segments
+    def segment_customer(row):
+        r, f, m = int(row['R_Score']), int(row['F_Score']), int(row['M_Score'])
+        if r >= 5 and f >= 5 and m >= 5: return 'Champions'
+        if r >= 3 and f >= 4 and m >= 4: return 'Loyal Customers'
+        if r >= 4 and f <= 2: return 'New Customers'
+        if r <= 2 and f >= 4: return 'At Risk'
+        if r <= 2 and f <= 2: return 'Lost'
+        return 'Regular'
+    
+    rfm['Segment'] = rfm.apply(segment_customer, axis=1)
+    
+    # Get Segment Counts
+    segment_counts = rfm['Segment'].value_counts().to_dict()
+    
+    # Get Top Customers with Offers
+    top_customers = rfm.sort_values('Monetary', ascending=False).head(5).reset_index()
+    
+    def get_offer(segment):
+        offers = {
+            'Champions': 'VIP Access + 20% Off',
+            'Loyal Customers': 'Double Points',
+            'New Customers': 'Welcome Gift',
+            'At Risk': 'We Miss You - 10% Off',
+            'Lost': 'Win Back - 15% Off',
+            'Regular': 'Free Shipping'
+        }
+        return offers.get(segment, 'Standard Offer')
+    
+    customers_list = []
+    for _, row in top_customers.iterrows():
+        customers_list.append({
+            'id': str(row['CustomerID']),
             'amount': round(row['Monetary'], 2),
             'segment': row['Segment'],
-            'offer': offer_map.get(row['Segment'], '📧 Newsletter')
+            'offer': get_offer(row['Segment'])
         })
         
-    return {'segmentCounts': rfm['Segment'].value_counts().to_dict(), 'topCustomers': top_list}
-
-# ==========================================
-# ⛓️ BLOCKCHAIN LOGIC
-# ==========================================
-def deploy_contract():
-    try:
-        # Install solc if needed
-        try:
-            solcx.install_solc('0.8.0')
-        except:
-            pass
-            
-        w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
-        if not w3.is_connected(): return None
-        
-        with open('ForecastLogger.sol', 'r') as f:
-            source = f.read()
-            
-        compiled = solcx.compile_source(source, output_values=['abi', 'bin'])
-        contract_id, contract_interface = list(compiled.items())[0]
-        
-        # Deploy
-        w3.eth.default_account = w3.eth.accounts[0]
-        ForecastLogger = w3.eth.contract(abi=contract_interface['abi'], bytecode=contract_interface['bin'])
-        tx_hash = ForecastLogger.constructor().transact()
-        tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-        
-        address = tx_receipt.contractAddress
-        with open(CONTRACT_ADDRESS_FILE, 'w') as f:
-            f.write(address)
-            
-        print(f"✅ Contract Deployed at: {address}")
-        return address
-    except Exception as e:
-        print(f"⚠️ Deployment Failed (using mock): {e}")
-        return None
-
-def log_to_blockchain_real(data_hash, total_sales):
-    try:
-        w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
-        if not w3.is_connected(): return None
-        
-        # Get Contract Address
-        if os.path.exists(CONTRACT_ADDRESS_FILE):
-            with open(CONTRACT_ADDRESS_FILE, 'r') as f:
-                address = f.read().strip()
-        else:
-            address = deploy_contract()
-            
-        if not address: return None
-        
-        # Compile to get ABI dynamically
-        try:
-            with open('ForecastLogger.sol', 'r') as f: source = f.read()
-            compiled = solcx.compile_source(source, output_values=['abi'])
-            contract_interface = list(compiled.items())[0][1]
-            abi = contract_interface['abi']
-        except:
-            # Fallback ABI if compilation fails at runtime
-            abi = [{"inputs":[{"internalType":"string","name":"_forecastHash","type":"string"},{"internalType":"uint256","name":"_totalSales","type":"uint256"}],"name":"logForecast","outputs":[],"stateMutability":"nonpayable","type":"function"}]
-        
-        contract = w3.eth.contract(address=address, abi=abi)
-        
-        # Check if hash already exists (prevent duplicate logging)
-        try:
-            is_logged = contract.functions.isHashLogged(data_hash).call()
-            if is_logged:
-                print(f"⚠️ Hash {data_hash[:16]}... already logged to blockchain")
-                return "ALREADY_LOGGED"
-        except:
-            # If function doesn't exist (old contract), continue anyway
-            pass
-        
-        # Convert to absolute value to handle negative sales (returns)
-        # uint256 only accepts positive numbers
-        total_sales_abs = abs(int(total_sales))
-        
-        tx_hash = contract.functions.logForecast(data_hash, total_sales_abs).transact({'from': w3.eth.accounts[0]})
-        return w3.to_hex(tx_hash)
-    except Exception as e:
-        print(f"Blockchain Error: {e}")
-        # Fallback to self-transaction if contract fails
-        try:
-            w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
-            tx = w3.eth.send_transaction({
-                'from': w3.eth.accounts[0],
-                'to': w3.eth.accounts[0],
-                'data': w3.to_hex(text=data_hash)
-            })
-            return w3.to_hex(tx)
-        except:
-            return None
+    return {
+        'available': True,
+        'segmentCounts': segment_counts,
+        'topCustomers': customers_list
+    }
 
 # ==========================================
 # 🚀 API ENDPOINTS
 # ==========================================
+
+@app.route('/api/upload-csv', methods=['POST'])
+def upload_csv():
+    global CURRENT_CSV_FILE, data_cache, CURRENT_MAPPING
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    if file and file.filename.endswith('.csv'):
+        filename = file.filename
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        
+        try:
+            # Validate and load CSV
+            df = validate_uploaded_csv(file, filepath)
+            
+            # 🔍 AUTO-DETECT FIELDS
+            detection = detect_fields(df)
+            
+            mapping = detection['mapping']
+            confidence = detection['confidence']
+            warnings = detection['warnings']
+            
+            # Check if required fields were detected
+            missing_required = []
+            if not mapping.get('date'):
+                missing_required.append('date')
+            if not mapping.get('value'):
+                missing_required.append('value')
+            
+            # Update global state
+            CURRENT_CSV_FILE = filename
+            data_cache.clear()
+            
+            # If high confidence and all required fields found → auto-apply mapping
+            if confidence == 'high' and not missing_required:
+                CURRENT_MAPPING = mapping
+                
+                # Clean and validate data
+                df_clean, clean_warnings = validate_and_clean_data(df, mapping)
+                warnings.extend(clean_warnings)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'File uploaded and fields auto-detected!',
+                    'filename': filename,
+                    'mapping': mapping,
+                    'confidence': confidence,
+                    'warnings': warnings,
+                    'requires_mapping': False,  # ✅ No manual mapping needed!
+                    'auto_detected': True
+                })
+            
+            # If medium/low confidence OR missing required → ask user to confirm/edit
+            else:
+                CURRENT_MAPPING = {}  # Don't auto-apply yet
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Please confirm or adjust field mapping',
+                    'filename': filename,
+                    'columns': df.columns.tolist(),
+                    'suggested_mapping': mapping,
+                    'confidence': confidence,
+                    'confidence_scores': detection['confidence_scores'],
+                    'warnings': warnings,
+                    'missing_required': missing_required,
+                    'requires_mapping': True,  # ⚠️ User confirmation needed
+                    'auto_detected': False
+                })
+            
+        except CSVValidationError as e:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'Invalid CSV: {str(e)}'}), 400
+            
+    return jsonify({'error': 'Invalid file type'}), 400
+
+@app.route('/api/save-mapping', methods=['POST'])
+def save_mapping():
+    global CURRENT_MAPPING, data_cache
+    
+    try:
+        mapping = request.json
+        if not mapping or 'date' not in mapping or 'value' not in mapping:
+            return jsonify({'success': False, 'error': 'Invalid mapping. Date and Value are required.'}), 400
+            
+        CURRENT_MAPPING = mapping
+        data_cache.clear() # Clear cache to force reload with new mapping
+        
+        print(f"✅ Saved mapping: {CURRENT_MAPPING}")
+        return jsonify({'success': True, 'message': 'Mapping saved successfully'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/dashboard', methods=['GET'])
 def get_dashboard():
     try:
@@ -370,44 +555,79 @@ def get_dashboard():
         if df is None: 
             return jsonify({
                 'success': False, 
-                'error': 'Data load failed. Please ensure online_retail_II.csv exists in the project root directory.'
-            }), 500
+                'error': 'No data available. Please upload a CSV file to get started.'
+            }), 400
         
+        # ==========================================
+        # 🔥 CRITICAL FIX: Filter BEFORE analytics
+        # ==========================================
         # Get date range from query parameters
         from_date = request.args.get('from')
         to_date = request.args.get('to')
         
-        # Filter data by date range if provided
+        # Apply date filter BEFORE any analytics
+        df_filtered = df.copy()
         if from_date or to_date:
             if from_date:
                 from_dt = pd.to_datetime(from_date)
-                df = df[df['InvoiceDate'] >= from_dt]
+                df_filtered = df_filtered[df_filtered['InvoiceDate'] >= from_dt]
             if to_date:
                 to_dt = pd.to_datetime(to_date)
-                df = df[df['InvoiceDate'] <= to_dt]
-            
-            # Clear cache when date range changes (force retrain with filtered data)
-            global ML_MODEL_CACHE
-            ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+                df_filtered = df_filtered[df_filtered['InvoiceDate'] <= to_dt]
+                
+            if df_filtered.empty:
+                 return jsonify({'success': False, 'error': 'No data available for selected date range'}), 400
+
+        # Get forecast horizon from query parameters (default: 4 weeks)
+        horizon = request.args.get('forecast_horizon', default=4, type=int)
         
+        # Validate horizon
+        if horizon not in [2, 4, 8, 12]:
+            horizon = 4  # Fallback to default
         
-        # Validate we have enough data for forecasting
-        if len(df) < 10:
+        # Check if filtered dataset is too small for forecasting
+        date_span = (df_filtered['InvoiceDate'].max() - df_filtered['InvoiceDate'].min()).days
+        min_required_days = horizon * 7  # Need at least horizon weeks of data
+        
+        if date_span < min_required_days:
+            # Too small for reliable forecast with this horizon
             return jsonify({
-                'success': False,
-                'error': f'No data available for the selected date range ({from_date} to {to_date}). Please adjust the date range to match your dataset.',
-                'current_file': CURRENT_CSV_FILE,
-                'no_data': True
+                'success': False, 
+                'error': f'Insufficient data for {horizon}-week forecast. Need at least {min_required_days} days, got {date_span} days.'
             }), 400
+
+        # 1. Generate Forecast
+        forecast = generate_ml_forecast(df_filtered, horizon=horizon)
         
-        forecast = generate_ml_forecast(df)
-        rfm = generate_rfm(df)
-        countries, products = get_top_stats(df)
+        # 2. Calculate RFM (on filtered data)
+        has_customer_dimension = 'CustomerID' in df_filtered.columns and bool(CURRENT_MAPPING.get('customer')) and CURRENT_MAPPING.get('customer') != 'none'
+        rfm = calculate_rfm(df_filtered, has_customer_dimension=has_customer_dimension)
         
-        # Hash
+        # 3. Get Top Stats (on filtered data)
+        countries, products = get_top_stats(df_filtered)
+        
+        # 4. Generate Hash (based on filtered forecast)
         data_to_hash = json.dumps(forecast['forecast'], sort_keys=True)
         forecast_hash = hashlib.sha256(data_to_hash.encode()).hexdigest()
         
+        # 5. Root Cause Analysis (on filtered data)
+        root_cause = analyze_root_cause_dynamic(df_filtered, CURRENT_MAPPING)
+        
+        # 6. Available Years (from FULL dataset, not filtered)
+        date_col = CURRENT_MAPPING.get('date', 'InvoiceDate')
+        if date_col in df.columns:
+            years = sorted(df[date_col].dt.year.unique().tolist(), reverse=True)
+        else:
+            years = []
+
+        metric_label = _format_metric_label(CURRENT_MAPPING.get('value'))
+
+        capabilities = {
+            'hasProducts': 'Description' in df_filtered.columns,
+            'hasRegions': 'Country' in df_filtered.columns,
+            'hasCustomers': has_customer_dimension
+        }
+
         return jsonify({
             'success': True,
             'data': {
@@ -415,7 +635,12 @@ def get_dashboard():
                 'rfm': rfm,
                 'countries': countries,
                 'products': products,
-                'hash': forecast_hash
+                'hash': forecast_hash,
+                'root_cause': root_cause,
+                'years': years,
+                'detected_mapping': CURRENT_MAPPING,  # ← Expose mapping for UI debugging
+                'metric_label': metric_label,
+                'capabilities': capabilities
             }
         })
     except Exception as e:
@@ -430,153 +655,128 @@ def log_blockchain():
         data = request.json
         if not data:
             return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+        forecast_hash = data.get('hash')
+        total_sales = int(float(data.get('total_sales', 0)))
         
-        # Get total sales from request, default to 0 if missing
-        total_sales = data.get('total_sales', 0)
-        data_hash = data.get('hash')
-        
-        if not data_hash:
+        if not forecast_hash:
             return jsonify({'success': False, 'error': 'Hash is required'}), 400
-        
-        tx_hash = log_to_blockchain_real(data_hash, total_sales)
-        if tx_hash == "ALREADY_LOGGED":
-            return jsonify({
-                'success': False, 
-                'error': 'This forecast hash has already been logged to blockchain. Each unique forecast can only be logged once.',
-                'already_logged': True
-            }), 400
-        elif tx_hash:
-            return jsonify({'success': True, 'tx_hash': tx_hash})
+            
+        # Connect to Ganache
+        w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
+        if not w3.is_connected():
+            return jsonify({'success': False, 'error': 'Blockchain not connected'}), 503
+            
+        # Get Contract
+        address = None
+        if os.path.exists(CONTRACT_ADDRESS_FILE):
+            with open(CONTRACT_ADDRESS_FILE, 'r') as f:
+                address = f.read().strip()
         else:
-            return jsonify({
-                'success': False, 
-                'error': 'Blockchain connection failed. Please ensure Ganache is running on port 8545.'
-            }), 500
-    except Exception as e:
-        print(f"Blockchain API Error: {e}")
-        return jsonify({'success': False, 'error': f'Blockchain error: {str(e)}'}), 500
-
-# ==========================================
-# 📤 CSV UPLOAD ENDPOINTS
-# ==========================================
-@app.route('/api/upload-csv', methods=['POST'])
-def upload_csv():
-    """Upload and validate custom CSV file"""
-    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
-    
-    try:
-        # Check if file is in request
-        if 'file' not in request.files:
-            return jsonify({'success': False, 'error': 'No file provided'}), 400
+            address = deploy_contract()
+            
+        if not address: return None
         
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({'success': False, 'error': 'No file selected'}), 400
-        
-        # Generate safe filename
-        filename = file.filename
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        
-        # Validate and save CSV
+        # Compile to get ABI dynamically
         try:
-            df = validate_uploaded_csv(file, filepath)
-            
-            # Update current CSV file
-            CURRENT_CSV_FILE = filename
-            
-            # Clear all caches to force reload
-            data_cache.clear()
-            ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
-            
-            # Get date range from uploaded CSV
-            min_date = df['InvoiceDate'].min()
-            max_date = df['InvoiceDate'].max()
-            
-            return jsonify({
-                'success': True,
-                'filename': filename,
-                'rows': len(df),
-                'date_range': {
-                    'from': min_date.strftime('%Y-%m-%d'),
-                    'to': max_date.strftime('%Y-%m-%d')
-                },
-                'message': f'CSV uploaded successfully! {len(df)} transactions loaded.'
-            })
-            
-        except CSVValidationError as e:
-            # Validation failed - return user-friendly error
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 400
-            
-    except Exception as e:
-        print(f"Upload Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': f'Upload failed: {str(e)}'}), 500
-
-@app.route('/api/remove-upload', methods=['POST'])
-def remove_upload():
-    """Remove uploaded CSV and revert to default"""
-    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
-    
-    try:
-        data = request.json
-        filename = data.get('filename')
+            with open('ForecastLogger.sol', 'r') as f: source = f.read()
+            import solcx
+            compiled = solcx.compile_source(source, output_values=['abi'])
+            contract_interface = list(compiled.items())[0][1]
+            abi = contract_interface['abi']
+        except:
+            # Fallback ABI if compilation fails at runtime
+            abi = [{"inputs":[{"internalType":"string","name":"_forecastHash","type":"string"},{"internalType":"uint256","name":"_totalSales","type":"uint256"}],"name":"logForecast","outputs":[],"stateMutability":"nonpayable","type":"function"}]
         
-        if not filename:
-            return jsonify({'success': False, 'error': 'Filename required'}), 400
+        contract = w3.eth.contract(address=address, abi=abi)
         
-        # Don't allow removing default file
-        if filename == DEFAULT_CSV:
-            return jsonify({'success': False, 'error': 'Cannot remove default dataset'}), 400
-        
-        # Remove file if exists
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            print(f"✅ Removed uploaded file: {filename}")
-        
-        # Revert to default
-        CURRENT_CSV_FILE = DEFAULT_CSV
-        
-        # Clear all caches
-        data_cache.clear()
-        ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
+        # Send Transaction
+        tx_hash = contract.functions.logForecast(forecast_hash, total_sales).transact({
+            'from': w3.eth.accounts[0]
+        })
         
         return jsonify({
-            'success': True,
-            'message': 'Reverted to default dataset',
-            'current_file': DEFAULT_CSV
+            'success': True, 
+            'tx_hash': w3.to_hex(tx_hash),
+            'message': 'Logged to blockchain'
         })
         
     except Exception as e:
+        print(f"Blockchain Error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/reset-file', methods=['POST'])
 def reset_file():
-    """Force reset to default file (used on page load)"""
-    global CURRENT_CSV_FILE, data_cache, ML_MODEL_CACHE
-    CURRENT_CSV_FILE = DEFAULT_CSV
+    """Clear cache (used on page load)"""
+    global data_cache
+    # Don't reset CURRENT_CSV_FILE - keep whatever user uploaded
     data_cache.clear()
-    ML_MODEL_CACHE = {'forecast_data': None, 'model': None, 'metrics': None}
-    return jsonify({'success': True, 'message': 'Reset to default file'})
+    return jsonify({'success': True, 'message': 'Cache cleared'})
         
-
 
 @app.route('/api/current-file', methods=['GET'])
 def get_current_file():
     """Get currently active CSV filename"""
     return jsonify({
         'success': True,
-        'filename': CURRENT_CSV_FILE,
-        'is_default': CURRENT_CSV_FILE == DEFAULT_CSV
+        'filename': CURRENT_CSV_FILE or 'No file uploaded',
+        'is_default': CURRENT_CSV_FILE == DEFAULT_CSV if CURRENT_CSV_FILE else False
     })
 
+@app.route('/api/remove-upload', methods=['POST'])
+def remove_upload():
+    global CURRENT_CSV_FILE, CURRENT_MAPPING
+    try:
+        data = request.json
+        filename = data.get('filename')
+        
+        if not filename:
+             return jsonify({'success': False, 'error': 'Filename required'}), 400
+             
+        # Reset to None (No default file)
+        CURRENT_CSV_FILE = None
+        CURRENT_MAPPING = {}
+        data_cache.clear()
+        
+        return jsonify({'success': True, 'message': 'File removed'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def deploy_contract():
+    try:
+        w3 = Web3(Web3.HTTPProvider(GANACHE_URL))
+        if not w3.is_connected(): return None
+        
+        # Compile
+        with open('ForecastLogger.sol', 'r') as f: source = f.read()
+        import solcx
+        
+        # Install solc if needed
+        try:
+            solcx.get_solc_version()
+        except:
+            solcx.install_solc('0.8.0')
+            
+        compiled = solcx.compile_source(source, output_values=['abi', 'bin'])
+        contract_interface = list(compiled.items())[0][1]
+        
+        # Deploy
+        ForecastLogger = w3.eth.contract(abi=contract_interface['abi'], bytecode=contract_interface['bin'])
+        tx_hash = ForecastLogger.constructor().transact({'from': w3.eth.accounts[0]})
+        tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        # Save Address
+        with open(CONTRACT_ADDRESS_FILE, 'w') as f:
+            f.write(tx_receipt.contractAddress)
+            
+        return tx_receipt.contractAddress
+    except Exception as e:
+        print(f"Deploy Error: {e}")
+        return None
+
 if __name__ == '__main__':
-    load_data()
+    # Don't load data on startup - wait for user to upload CSV
     # Only deploy if address file doesn't exist
     if not os.path.exists(CONTRACT_ADDRESS_FILE):
         deploy_contract()

@@ -11,13 +11,14 @@ import {
 
 interface Customer {
   id: string;
-  monetary: number;
+  amount: number;
   segment: string;
   offer: string;
 }
 
 interface Props {
   customers: Customer[];
+  metricLabel: string;
 }
 
 const getSegmentColor = (segment: string) => {
@@ -50,7 +51,7 @@ const getOfferStyle = (offer: string) => {
   return 'text-muted-foreground font-semibold';
 };
 
-export const CustomerTable = ({ customers }: Props) => {
+export const CustomerTable = ({ customers, metricLabel }: Props) => {
   return (
     <Card className="glass-card p-6 hover:glow-primary transition-all duration-300">
       <h3 className="text-lg font-semibold mb-4">Top 10 High-Value Customers</h3>
@@ -59,7 +60,7 @@ export const CustomerTable = ({ customers }: Props) => {
           <TableHeader>
             <TableRow className="hover:bg-transparent border-border/50">
               <TableHead>Customer ID</TableHead>
-              <TableHead>Monetary Value</TableHead>
+              <TableHead>{metricLabel}</TableHead>
               <TableHead>Segment</TableHead>
               <TableHead>Suggested Offer</TableHead>
             </TableRow>
@@ -68,7 +69,9 @@ export const CustomerTable = ({ customers }: Props) => {
             {customers.map((customer) => (
               <TableRow key={customer.id} className="border-border/50 hover:bg-muted/30">
                 <TableCell className="font-mono font-medium">{customer.id}</TableCell>
-                <TableCell className="font-bold text-lg">£{customer.monetary.toLocaleString()}</TableCell>
+                <TableCell className="font-bold text-lg">
+                  {customer.amount.toLocaleString()} {metricLabel}
+                </TableCell>
                 <TableCell>
                   <Badge className={getSegmentColor(customer.segment)}>
                     {customer.segment}

@@ -1,17 +1,22 @@
+import { AccuracyBadge } from '@/components/AccuracyBadge';
 import { CountryBarChart } from '@/components/charts/CountryBarChart';
 import { ForecastLineChart } from '@/components/charts/ForecastLineChart';
 import { ProductBarChart } from '@/components/charts/ProductBarChart';
 import { RFMDonutChart } from '@/components/charts/RFMDonutChart';
+import { ColumnMapping, ColumnMappingModal } from '@/components/ColumnMappingModal';
 import { CSVUploadModal } from '@/components/CSVUploadModal';
 import { CustomerTable } from '@/components/CustomerTable';
 import { DashboardSidebar } from '@/components/DashboardSidebar';
 import { DatePickerWithRange } from '@/components/DateRangePicker';
+import { DisclaimerPopup } from '@/components/DisclaimerPopup';
 import { ExportButton } from '@/components/ExportButton';
 import { HashCard } from '@/components/HashCard';
 import { MetricCard } from '@/components/MetricCard';
 import { NoDataOverlay } from '@/components/NoDataOverlay';
 import { OfferCard } from '@/components/OfferCard';
+import { RootCauseCard } from '@/components/RootCauseCard';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardData, fetchDashboardData } from '@/services/api';
 import { Database, TrendingUp } from 'lucide-react';
@@ -29,11 +34,16 @@ const Dashboard = () => {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false); // Modal visibility
   const [hasNoData, setHasNoData] = useState(false); // Track if date range has no data
   
-  // Date Range State (Default: 2009-2010 based on dataset)
-  const [date, setDate] = useState<DateRange | undefined>({
-    from: new Date('2009-12-01'),
-    to: new Date('2010-12-31'),
-  });
+  // Mapping State
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false);
+  const [mappingColumns, setMappingColumns] = useState<string[]>([]);
+  const [mappingFile, setMappingFile] = useState('');
+
+  // Date Range State (No default - shows all data initially)
+  const [date, setDate] = useState<DateRange | undefined>(undefined);
+
+  // Forecast Horizon State (Default: 4 weeks)
+  const [forecastHorizon, setForecastHorizon] = useState<number>(4);
 
 
   const [isInitialized, setIsInitialized] = useState(false);
@@ -64,7 +74,7 @@ const Dashboard = () => {
     return () => {
         clearInterval(interval);
     };
-  }, [date, isInitialized]); 
+  }, [date, forecastHorizon, isInitialized]); // ← Added forecastHorizon dependency 
 
   const fetchCurrentFile = async () => {
     try {
@@ -79,34 +89,84 @@ const Dashboard = () => {
     }
   };
 
-  const handleUploadSuccess = async (dateRange?: { from: string; to: string }) => {
-    // Auto-adjust date picker if date range provided
+  const handleUploadSuccess = async (
+    dateRange?: { from: string; to: string }, 
+    columns?: string[], 
+    filename?: string,
+    suggested_mapping?: any,
+    confidence?: string
+  ) => {
+    // ✅ AUTO-DETECTION SUCCESS - No mapping needed
+    if (!columns || columns.length === 0) {
+      toast.success('Dashboard loading with auto-detected fields...');
+      await fetchCurrentFile();
+      await loadData();
+      return;
+    }
+
+    // ⚠️ NEEDS USER CONFIRMATION - Show mapping modal with suggestions
+    if (columns && columns.length > 0 && filename) {
+      setMappingColumns(columns);
+      setMappingFile(filename);
+      setIsMappingModalOpen(true);
+      
+      // Pre-fill suggested mapping if available
+      if (suggested_mapping && confidence) {
+        toast.info(`Auto-detected fields with ${confidence} confidence. Please confirm.`);
+      }
+      return;
+    }
+
+    // Fallback: Auto-adjust date picker if date range provided
     if (dateRange) {
       setDate({
         from: new Date(dateRange.from),
         to: new Date(dateRange.to),
       });
     }
-    // Refresh current file info
     await fetchCurrentFile();
-    // Reload dashboard data with new CSV
     await loadData();
+  };
+
+  const handleMappingConfirm = async (mapping: ColumnMapping) => {
+    try {
+        const response = await fetch('/api/save-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mapping)
+        });
+        
+        if (response.ok) {
+            toast.success('Mapping saved! Loading dashboard...');
+            setIsMappingModalOpen(false);
+            await fetchCurrentFile();
+            await loadData();
+        } else {
+            toast.error('Failed to save mapping');
+        }
+    } catch (error) {
+        console.error('Mapping error:', error);
+        toast.error('Failed to save mapping');
+    }
   };
 
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const dashboardData = await fetchDashboardData(date);
+      const dashboardData = await fetchDashboardData(date, forecastHorizon);
       if (!dashboardData) throw new Error('No data received');
       setData(dashboardData);
       setHasNoData(false);
     } catch (error: any) {
       console.error('Failed to load dashboard data:', error);
       
-      // Check if it's a "no data" error (not a real error)
-      if (error.message && error.message.includes('No data available')) {
-        toast.warning(error.message);
+      // Check if it's a "no data" or "insufficient data" error (not a real error)
+      if (error.message && (error.message.includes('No data available') || error.message.includes('Insufficient data') || error.message.includes('upload a CSV'))) {
+        // Don't show error toast if it's just "no CSV uploaded"
+        if (!error.message.includes('upload a CSV')) {
+          toast.warning(error.message);
+        }
         setHasNoData(true);
         
         // If no data exists yet, set empty structure to allow rendering
@@ -117,18 +177,34 @@ const Dashboard = () => {
             forecast: [],
             countries: [],
             products: [],
-            rfm: [],
+            rfm: { available: false, segmentCounts: {}, topCustomers: [] },
             customers: [],
             hash: 'No Data',
-            tx_hash: ''
+            tx_hash: '',
+            metric_label: 'Metric',
+            capabilities: { hasProducts: false, hasRegions: false, hasCustomers: false }
           });
         }
       } else {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
         toast.error(`Failed to load data: ${errorMsg}`);
-        // Clear data on real errors
-        setData(null);
-        setHasNoData(false);
+        // Don't clear data on errors - keep showing the overlay
+        setHasNoData(true);
+        if (!data) {
+          setData({
+            total_forecast: 0,
+            historical: [],
+            forecast: [],
+            countries: [],
+            products: [],
+            rfm: { available: false, segmentCounts: {}, topCustomers: [] },
+            customers: [],
+            hash: 'No Data',
+            tx_hash: '',
+            metric_label: 'Metric',
+            capabilities: { hasProducts: false, hasRegions: false, hasCustomers: false }
+          });
+        }
       }
     } finally {
       setIsLoading(false);
@@ -185,6 +261,27 @@ const Dashboard = () => {
 
   if (!data) return null;
 
+  const formatValue = (value: number) => {
+    if (!value) return '0';
+    // Use proper comma formatting instead of k/M notation
+    return value.toLocaleString('en-US', { 
+      maximumFractionDigits: 0 
+    });
+  };
+
+  const metricLabel = data.metric_label || 'Metric';
+  const forecastTitle = `Total Forecast (${forecastHorizon} Weeks)`;
+  const hasProductData = Boolean(data.capabilities?.hasProducts && data.products.length > 0);
+  const hasRegionData = Boolean(data.capabilities?.hasRegions && data.countries.length > 0);
+  const hasCustomerData = Boolean(data.rfm.available && data.customers.length > 0);
+
+  const rfmChartData = data.rfm.available
+    ? Object.entries(data.rfm.segmentCounts || {}).map(([segment, count]) => ({
+        segment,
+        count: count as number
+      }))
+    : [];
+
   return (
     <div className="flex min-h-screen w-full bg-background">
       <DashboardSidebar />
@@ -205,7 +302,21 @@ const Dashboard = () => {
                 <Database className="h-4 w-4" />
                 Upload Dataset
               </Button>
-              <DatePickerWithRange date={date} setDate={setDate} />
+              <DatePickerWithRange date={date} setDate={setDate} availableYears={data?.years ?? []} />
+              
+              {/* Forecast Horizon Selector */}
+              <Select value={forecastHorizon.toString()} onValueChange={(value) => setForecastHorizon(parseInt(value))}>
+                <SelectTrigger className="w-[140px] glass-card">
+                  <SelectValue placeholder="Horizon" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2">2 Weeks</SelectItem>
+                  <SelectItem value="4">4 Weeks</SelectItem>
+                  <SelectItem value="8">8 Weeks</SelectItem>
+                  <SelectItem value="12">12 Weeks</SelectItem>
+                </SelectContent>
+              </Select>
+              
               <ExportButton data={data} dateRange={date} />
             </div>
           </div>
@@ -233,31 +344,52 @@ const Dashboard = () => {
             isDefault={isDefaultFile}
           />
 
+          {/* Disclaimer Popup (shows on first visit) */}
+          <DisclaimerPopup />
+
           <div className="space-y-6">
                 {/* Header Metrics */}
-                <div className="grid grid-cols-1 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <MetricCard
-                        title="Total Forecast (4 Weeks)"
-                        value={`£${data.total_forecast.toLocaleString()}`}
+                        title={forecastTitle}
+                        value={`${formatValue(data.total_forecast)} ${metricLabel}`}
                         icon={TrendingUp}
                     />
+                    
+                    {/* Accuracy Badge */}
+                    {data.accuracy && (
+                      <AccuracyBadge metrics={data.accuracy} />
+                    )}
+
+                    {/* Root Cause Analysis Card */}
+                    {data.root_cause && (
+                      <RootCauseCard data={data.root_cause} />
+                    )}
                 </div>
 
                 {/* Top Segment Offer */}
-                {data.customers && data.customers.length > 0 && (
+                {hasCustomerData && (
                 <OfferCard
                     segment={data.customers[0].segment}
                     offer={data.customers[0].offer}
-                    description={`Recommended action for ${data.customers[0].segment} segment - our most valuable customer group with £${data.customers[0].monetary.toLocaleString()} average spend.`}
+                    description={`Recommended action for ${data.customers[0].segment} segment – avg. contribution ${formatValue(data.customers[0].amount)} ${metricLabel}.`}
                 />
                 )}
 
                 {/* Forecast Chart */}
                 <div className="relative">
-                  {hasNoData && <NoDataOverlay />}
+                  {hasNoData && (
+                    <NoDataOverlay 
+                      message={data.hash === 'No Data' && data.total_forecast === 0 ? "No CSV file uploaded yet" : "No data available for selected date range"}
+                      showUploadButton={data.hash === 'No Data' && data.total_forecast === 0}
+                      onUploadClick={() => setIsUploadModalOpen(true)}
+                    />
+                  )}
                   <ForecastLineChart
                       historical={data.historical}
                       forecast={data.forecast}
+                      metricLabel={metricLabel}
+                      horizon={forecastHorizon}
                   />
                 </div>
 
@@ -265,24 +397,40 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="relative">
                       {hasNoData && <NoDataOverlay />}
-                      <CountryBarChart data={data.countries} />
+                      {hasRegionData ? (
+                        <CountryBarChart data={data.countries} valueLabel={metricLabel} />
+                      ) : (
+                        <NoDataOverlay message="Region data not available for this dataset" />
+                      )}
                     </div>
                     <div className="relative">
                       {hasNoData && <NoDataOverlay />}
-                      <ProductBarChart data={data.products} />
+                      {hasProductData ? (
+                        <ProductBarChart data={data.products} valueLabel={metricLabel} />
+                      ) : (
+                        <NoDataOverlay message="Product data not available for this dataset" />
+                      )}
                     </div>
                 </div>
 
                 {/* RFM Chart */}
                 <div className="relative">
                   {hasNoData && <NoDataOverlay />}
-                  <RFMDonutChart data={data.rfm} />
+                  {data.rfm.available && rfmChartData.length > 0 ? (
+                    <RFMDonutChart data={rfmChartData} />
+                  ) : (
+                    <NoDataOverlay message="Customer segmentation unavailable (Customer ID not mapped)" />
+                  )}
                 </div>
 
                 {/* Customer Table */}
                 <div className="relative">
                   {hasNoData && <NoDataOverlay />}
-                  <CustomerTable customers={data.customers} />
+                  {hasCustomerData ? (
+                    <CustomerTable customers={data.customers} metricLabel={metricLabel} />
+                  ) : (
+                    <NoDataOverlay message="Customer details unavailable for this dataset" />
+                  )}
                 </div>
 
                 {/* Hash Cards */}
@@ -318,6 +466,22 @@ const Dashboard = () => {
           </div>
         </div>
       </main>
+
+      <CSVUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onUploadSuccess={handleUploadSuccess}
+        currentFile={currentFile}
+        isDefault={isDefaultFile}
+      />
+
+      <ColumnMappingModal
+        isOpen={isMappingModalOpen}
+        onClose={() => setIsMappingModalOpen(false)}
+        columns={mappingColumns}
+        fileName={mappingFile}
+        onConfirm={handleMappingConfirm}
+      />
     </div>
   );
 };

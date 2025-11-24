@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { useState } from 'react';
 
 interface Props {
-  data: Array<{ segment: string; count: number; color: string }>;
+  data: Array<{ segment: string; count: number }>;
 }
 
 const renderActiveShape = (props: any) => {
@@ -46,28 +46,24 @@ export const RFMDonutChart = ({ data }: Props) => {
     setActiveIndex(index);
   };
 
-  // Map segments to colors (backend returns: Champions, Loyal Customers, Potential Loyalists, At Risk, Lost, Standard)
-  const chartData = data.map(item => {
-    const segmentColorMap: Record<string, string> = {
-      'Champions': 'hsl(var(--chart-1))',
-      'Loyal Customers': 'hsl(var(--chart-2))',
-      'Potential Loyalists': 'hsl(var(--chart-5))',
-      'At Risk': 'hsl(var(--chart-4))',
-      'Lost': 'hsl(var(--chart-3))',
-      'Standard': 'hsl(var(--chart-3))',
-      // Fallback for old segment names
-      'VIP': 'hsl(var(--chart-1))',
-      'Loyal': 'hsl(var(--chart-2))',
-      'At-Risk': 'hsl(var(--chart-4))',
-      'Normal': 'hsl(var(--chart-3))',
-    };
+  const segmentColorMap: Record<string, string> = {
+    'Champions': 'hsl(var(--chart-1))',
+    'Loyal Customers': 'hsl(var(--chart-2))',
+    'Potential Loyalists': 'hsl(var(--chart-5))',
+    'At Risk': 'hsl(var(--chart-4))',
+    'Lost': 'hsl(var(--chart-3))',
+    'Standard': 'hsl(var(--chart-3))',
+    'VIP': 'hsl(var(--chart-1))',
+    'Loyal': 'hsl(var(--chart-2))',
+    'At-Risk': 'hsl(var(--chart-4))',
+    'Normal': 'hsl(var(--chart-3))',
+  };
 
-    return {
-      segment: item.segment,
-      count: item.count,
-      color: segmentColorMap[item.segment] || item.color || 'hsl(var(--chart-3))',
-    };
-  });
+  const chartData = data.map(item => ({
+    segment: item.segment,
+    count: item.count,
+    color: segmentColorMap[item.segment] || 'hsl(var(--chart-3))',
+  }));
 
   return (
     <Card className="glass-card p-6 hover:glow-primary transition-all duration-300">

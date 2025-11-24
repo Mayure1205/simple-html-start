@@ -7,7 +7,13 @@ import { toast } from 'sonner';
 interface CSVUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUploadSuccess: (dateRange?: { from: string; to: string }) => void;
+  onUploadSuccess: (
+    dateRange?: { from: string; to: string }, 
+    columns?: string[], 
+    filename?: string,
+    suggested_mapping?: any,
+    confidence?: string
+  ) => void;
   currentFile: string;
   isDefault: boolean;
 }
@@ -53,13 +59,31 @@ export const CSVUploadModal = ({ isOpen, onClose, onUploadSuccess, currentFile, 
       const data = await response.json();
 
       if (response.ok) {
-        toast.success(data.message || 'CSV uploaded successfully!');
-        if (data.date_range) {
-          toast.info(`Date range set to ${data.date_range.from} to ${data.date_range.to}`);
+        // ✅ AUTO-DETECTION SUCCESS
+        if (data.auto_detected && !data.requires_mapping) {
+          toast.success(data.message || 'File uploaded and fields auto-detected!');
+          if (data.warnings && data.warnings.length > 0) {
+            data.warnings.forEach((w: string) => toast.warning(w));
+          }
+          setSelectedFile(null);
+          // No mapping needed - directly reload dashboard
+          onUploadSuccess(data.date_range, undefined, data.filename);
+          onClose();
         }
-        setSelectedFile(null);
-        onUploadSuccess(data.date_range);
-        onClose();
+        // ⚠️ NEEDS USER CONFIRMATION
+        else if (data.requires_mapping) {
+          toast.info(data.message || 'Please confirm field mapping');
+          setSelectedFile(null);
+          // Pass suggested mapping to parent for confirmation
+          onUploadSuccess(
+            data.date_range, 
+            data.columns || [], 
+            data.filename,
+            data.suggested_mapping,
+            data.confidence
+          );
+          onClose();
+        }
       } else {
         toast.error(data.error || 'Upload failed');
       }

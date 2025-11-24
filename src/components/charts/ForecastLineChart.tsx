@@ -12,9 +12,11 @@ interface DataPoint {
 interface Props {
   historical: Array<{ week: string; sales: number }>;
   forecast: Array<{ week: string; sales: number; lower: number; upper: number }>;
+  metricLabel: string;
+  horizon: number;
 }
 
-export const ForecastLineChart = ({ historical, forecast }: Props) => {
+export const ForecastLineChart = ({ historical, forecast, metricLabel, horizon }: Props) => {
   const combinedData: DataPoint[] = [
     ...historical.map(d => ({ week: d.week, historical: d.sales })),
     ...forecast.map(d => ({
@@ -28,7 +30,7 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
   return (
     <Card className="glass-card p-6 glow-primary border-2 border-primary/20">
       <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        AI Sales Forecast - Next 4 Weeks
+        AI Forecast - Next {horizon} Weeks
         <span className="text-xs bg-accent/10 text-accent px-2 py-1 rounded-full">AI Powered</span>
       </h3>
       <ResponsiveContainer width="100%" height={350}>
@@ -42,7 +44,7 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
           <YAxis 
             stroke="hsl(var(--muted-foreground))"
             tick={{ fill: 'hsl(var(--foreground))' }}
-            tickFormatter={(value) => `£${(value / 1000).toFixed(0)}k`}
+            tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
           />
           <Tooltip
             contentStyle={{
@@ -50,7 +52,7 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
               border: '1px solid hsl(var(--border))',
               borderRadius: '8px',
             }}
-            formatter={(value: number) => [`£${value.toLocaleString()}`, '']}
+            formatter={(value: number) => [`${value.toLocaleString()} ${metricLabel}`, metricLabel]}
           />
           <Legend />
           
@@ -76,7 +78,7 @@ export const ForecastLineChart = ({ historical, forecast }: Props) => {
             stroke="hsl(var(--chart-1))"
             strokeWidth={3}
             dot={{ fill: 'hsl(var(--chart-1))', r: 4 }}
-            name="Historical Sales"
+            name="Historical"
           />
           <Line
             type="monotone"

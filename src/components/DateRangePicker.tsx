@@ -1,9 +1,7 @@
-import * as React from "react"
-import { addDays, format, startOfYear, endOfYear } from "date-fns"
+import { endOfYear, format, startOfYear } from "date-fns"
 import { Calendar as CalendarIcon } from "lucide-react"
 import { DateRange } from "react-day-picker"
 
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import {
@@ -18,36 +16,35 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 interface DatePickerWithRangeProps {
     className?: string
     date: DateRange | undefined
     setDate: (date: DateRange | undefined) => void
-}
-
-// Generate years from 2009 to current year (dataset range)
-const getAvailableYears = () => {
-    const currentYear = new Date().getFullYear()
-    const years = []
-    for (let year = 2009; year <= currentYear; year++) {
-        years.push(year)
-    }
-    return years.reverse() // Most recent first
+    availableYears?: number[]
 }
 
 export function DatePickerWithRange({
     className,
     date,
     setDate,
+    availableYears = []
 }: DatePickerWithRangeProps) {
-    const availableYears = getAvailableYears()
+    // If no years provided, default to current year
+    const years = availableYears.length > 0 ? availableYears : [new Date().getFullYear()]
     
-    // Get current year from date or default to current year
-    const currentYear = date?.from?.getFullYear() || new Date().getFullYear()
-    const selectedYear = currentYear.toString()
+    // Get selected year from date, or default to "all"
+    const selectedYear = date?.from ? date.from.getFullYear().toString() : "all"
     
     const handleYearSelect = (year: string) => {
         if (!year) return
+        
+        // If "All Data" is selected, clear the date filter
+        if (year === "all") {
+            setDate(undefined)
+            return
+        }
         
         const yearNum = parseInt(year)
         const yearStart = startOfYear(new Date(yearNum, 0, 1))
@@ -63,14 +60,15 @@ export function DatePickerWithRange({
         <div className={cn("flex gap-2 items-center", className)}>
             {/* Year Selector */}
             <Select
-                value={selectedYear || currentYear.toString()}
+                value={selectedYear || "all"}
                 onValueChange={handleYearSelect}
             >
                 <SelectTrigger className="w-[120px] glass-card">
                     <SelectValue placeholder="Select Year" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px]">
-                    {availableYears.map((year) => (
+                    <SelectItem value="all">All Data</SelectItem>
+                    {years.map((year) => (
                         <SelectItem key={year} value={year.toString()}>
                             {year}
                         </SelectItem>
@@ -100,7 +98,7 @@ export function DatePickerWithRange({
                                 format(date.from, "LLL dd, y")
                             )
                         ) : (
-                            <span>Pick a date</span>
+                            <span>All Data</span>
                         )}
                     </Button>
                 </PopoverTrigger>

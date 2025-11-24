@@ -1,0 +1,74 @@
+# Myhack Universal Configuration
+# This file controls the entire system behavior
+
+system:
+  name: "Myhack Analytics Platform"
+  version: "1.0.0"
+  mode: "retail"  # retail, finance, healthcare, saas
+
+data:
+  source_type: "csv"  # csv, excel, json, sql, api
+  upload_folder: "uploads"
+  default_file: "online_retail_II.csv"
+  max_file_size_mb: 100
+  
+  # Column mapping (auto-detected but can override)
+  columns:
+    date: "InvoiceDate"
+    amount: "TotalAmount"
+    customer: "CustomerID"
+    category: "Description"
+    quantity: "Quantity"
+    price: "Price"
+
+models:
+  forecasting:
+    enabled: true
+    model: "linear_regression"  # linear_regression, arima, prophet, lstm
+    horizon_days: 28  # 4 weeks
+    retrain_schedule: "weekly"
+    min_data_points: 4
+    accuracy_threshold: 0.70  # 70% minimum
+  
+  churn:
+    enabled: true
+    model: "logistic"  # logistic, random_forest, neural_net
+    threshold_days: 90
+    retrain_schedule: "monthly"
+  
+  segmentation:
+    enabled: true
+    method: "rfm"  # rfm, kmeans, dbscan
+    top_customers: 10
+
+analytics:
+  forecast_horizon: 28  # days
+  confidence_interval: 0.85
+  show_confidence_badges: true
+  
+features:
+  # Toggle features on/off
+  yoy_comparison: true
+  category_forecast: true
+  stockout_prediction: false  # requires 'stock' column
+  profitability: false  # requires 'cost' column
+  delivery_tracking: false  # requires 'delivery_time' column
+  marketing_attribution: false  # requires 'channel' column
+  
+dashboard:
+  theme: "dark"  # dark, light
+  show_disclaimer: true
+  accuracy_display: true
+  
+blockchain:
+  enabled: true
+  network: "ganache"  # ganache, sui_testnet, sui_mainnet
+  contract_address_file: "contract_address.txt"
+  log_forecasts: true
+  log_segments: false
+
+monitoring:
+  accuracy_alerts: true
+  drift_detection: true
+  error_logging: true
+  performance_tracking: true

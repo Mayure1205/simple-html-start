@@ -1,13 +1,14 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface Props {
-  data: Array<{ product: string; quantity: number }>;
+  data: Array<{ product: string; value: number }>;
+  valueLabel: string;
 }
 
-export const ProductBarChart = ({ data }: Props) => {
-  // Sort data by quantity descending
-  const sortedData = [...data].sort((a, b) => b.quantity - a.quantity);
+export const ProductBarChart = ({ data, valueLabel }: Props) => {
+  // Sort data by value descending
+  const sortedData = [...data].sort((a, b) => b.value - a.value);
 
   // Get Top 10 and Bottom 10
   const top10 = sortedData.slice(0, 10);
@@ -40,15 +41,27 @@ export const ProductBarChart = ({ data }: Props) => {
               border: '1px solid hsl(var(--border))',
               borderRadius: '8px',
             }}
-            formatter={(value: number) => [`${value.toLocaleString()} units`, 'Quantity']}
+            formatter={(value: number) => [`${value.toLocaleString()} ${valueLabel}`, valueLabel]}
           />
-          <Bar dataKey="quantity" radius={[4, 4, 0, 0]}>
-            {displayData.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={index < 10 ? 'hsl(var(--chart-3))' : 'hsl(var(--destructive))'}
-              />
-            ))}
+          <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+            {displayData.map((entry, index) => {
+              // Create color gradient across all bars
+              const colors = [
+                'hsl(var(--chart-1))',  // Blue
+                'hsl(var(--chart-2))',  // Green
+                'hsl(var(--chart-3))',  // Yellow
+                'hsl(var(--chart-4))',  // Orange
+                'hsl(var(--chart-5))',  // Purple
+              ];
+              const colorIndex = index % colors.length;
+              
+              return (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={colors[colorIndex]}
+                />
+              );
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
