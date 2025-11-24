@@ -15,11 +15,14 @@ import { MetricCard } from '@/components/MetricCard';
 import { NoDataOverlay } from '@/components/NoDataOverlay';
 import { OfferCard } from '@/components/OfferCard';
 import { RootCauseCard } from '@/components/RootCauseCard';
+import { ContextBanner } from '@/components/ContextBanner';
+import { ReconciliationCheck } from '@/components/ReconciliationCheck';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardData, fetchDashboardData } from '@/services/api';
-import { Database, TrendingUp } from 'lucide-react';
+import { reconcileData } from '@/services/reconciliation';
+import { Database, TrendingUp, TrendingDown, Activity, ShoppingCart } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DateRange } from 'react-day-picker';
 import { toast } from 'sonner';
@@ -347,7 +350,49 @@ const Dashboard = () => {
           {/* Disclaimer Popup (shows on first visit) */}
           <DisclaimerPopup />
 
+          {/* Context Banner */}
+          <ContextBanner
+            datasetName={data.dataset_name || currentFile}
+            dateRange={data.date_range || null}
+            columnMapping={data.column_mapping || {}}
+            metricLabel={metricLabel}
+          />
+
           <div className="space-y-6">
+                {/* KPI Cards Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {data.kpi && (
+                    <>
+                      <MetricCard
+                        title="Total Value"
+                        value={`${formatValue(data.kpi.total_value)} ${metricLabel}`}
+                        icon={TrendingUp}
+                      />
+                      <MetricCard
+                        title="Growth vs Previous"
+                        value={`${data.kpi.growth_percent >= 0 ? '+' : ''}${data.kpi.growth_percent.toFixed(1)}%`}
+                        icon={data.kpi.growth_percent >= 0 ? TrendingUp : TrendingDown}
+                      />
+                      <MetricCard
+                        title="Avg Per Week"
+                        value={`${formatValue(data.kpi.avg_per_week)} ${metricLabel}`}
+                        icon={Activity}
+                      />
+                      <MetricCard
+                        title="Transactions"
+                        value={formatValue(data.kpi.transaction_count)}
+                        icon={ShoppingCart}
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* Reconciliation Check */}
+                <ReconciliationCheck
+                  displayedTotal={data.kpi?.total_value || data.total_forecast}
+                  onReconcile={reconcileData}
+                />
+
                 {/* Header Metrics */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <MetricCard
@@ -400,7 +445,9 @@ const Dashboard = () => {
                       {hasRegionData ? (
                         <CountryBarChart data={data.countries} valueLabel={metricLabel} />
                       ) : (
-                        <NoDataOverlay message="Region data not available for this dataset" />
+                        <NoDataOverlay 
+                          message="Map Region column to unlock Regional Insights" 
+                        />
                       )}
                     </div>
                     <div className="relative">
@@ -408,7 +455,9 @@ const Dashboard = () => {
                       {hasProductData ? (
                         <ProductBarChart data={data.products} valueLabel={metricLabel} />
                       ) : (
-                        <NoDataOverlay message="Product data not available for this dataset" />
+                        <NoDataOverlay 
+                          message="Map Product column to unlock Product Insights" 
+                        />
                       )}
                     </div>
                 </div>
@@ -419,7 +468,7 @@ const Dashboard = () => {
                   {data.rfm.available && rfmChartData.length > 0 ? (
                     <RFMDonutChart data={rfmChartData} />
                   ) : (
-                    <NoDataOverlay message="Customer segmentation unavailable (Customer ID not mapped)" />
+                    <NoDataOverlay message="Map Customer ID column to unlock Customer Segmentation (RFM Analysis)" />
                   )}
                 </div>
 

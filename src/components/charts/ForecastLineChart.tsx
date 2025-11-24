@@ -7,6 +7,7 @@ interface DataPoint {
   forecast?: number;
   lower?: number;
   upper?: number;
+  isAnomaly?: boolean;
 }
 
 interface Props {
@@ -17,8 +18,25 @@ interface Props {
 }
 
 export const ForecastLineChart = ({ historical, forecast, metricLabel, horizon }: Props) => {
+  // Detect anomalies (spikes/drops > 30% from average)
+  const historicalAvg = historical.length > 0
+    ? historical.reduce((sum, d) => sum + d.sales, 0) / historical.length
+    : 0;
+
+  const historicalWithAnomalies = historical.map((d) => {
+    const deviation = Math.abs((d.sales - historicalAvg) / historicalAvg);
+    return {
+      ...d,
+      isAnomaly: deviation > 0.3,
+    };
+  });
+
   const combinedData: DataPoint[] = [
-    ...historical.map(d => ({ week: d.week, historical: d.sales })),
+    ...historicalWithAnomalies.map(d => ({ 
+      week: d.week, 
+      historical: d.sales,
+      isAnomaly: d.isAnomaly 
+    })),
     ...forecast.map(d => ({
       week: d.week,
       forecast: d.sales,
@@ -77,7 +95,22 @@ export const ForecastLineChart = ({ historical, forecast, metricLabel, horizon }
             dataKey="historical"
             stroke="hsl(var(--chart-1))"
             strokeWidth={3}
-            dot={{ fill: 'hsl(var(--chart-1))', r: 4 }}
+            dot={(props: any) => {
+              const { cx, cy, payload } = props;
+              if (payload.isAnomaly) {
+                return (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={6}
+                    fill="hsl(var(--destructive))"
+                    stroke="white"
+                    strokeWidth={2}
+                  />
+                );
+              }
+              return <circle cx={cx} cy={cy} r={4} fill="hsl(var(--chart-1))" />;
+            }}
             name="Historical"
           />
           <Line

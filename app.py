@@ -628,6 +628,57 @@ def get_dashboard():
             'hasCustomers': has_customer_dimension
         }
 
+        # ==========================================
+        # 🆕 PHASE 1: Calculate KPIs
+        # ==========================================
+        value_col = CURRENT_MAPPING.get('value', 'Quantity')
+        date_col = CURRENT_MAPPING.get('date', 'InvoiceDate')
+        
+        # Total value in current date range
+        total_value = df_filtered[value_col].sum()
+        
+        # Growth % vs previous equal period
+        if from_date and to_date:
+            # Calculate period length
+            period_days = (pd.to_datetime(to_date) - pd.to_datetime(from_date)).days
+            
+            # Get previous period
+            prev_from = pd.to_datetime(from_date) - timedelta(days=period_days)
+            prev_to = pd.to_datetime(from_date)
+            
+            df_previous = df[(df[date_col] >= prev_from) & (df[date_col] < prev_to)]
+            prev_value = df_previous[value_col].sum()
+            
+            if prev_value > 0:
+                growth_percent = ((total_value - prev_value) / prev_value) * 100
+            else:
+                growth_percent = 0
+        else:
+            # No date range selected, can't calculate growth
+            growth_percent = 0
+        
+        # Average per week
+        weeks_in_range = len(df_filtered[date_col].dt.to_period('W').unique())
+        avg_per_week = total_value / weeks_in_range if weeks_in_range > 0 else 0
+        
+        # Transaction count
+        transaction_count = len(df_filtered)
+        
+        kpi_data = {
+            'total_value': round(total_value, 2),
+            'growth_percent': round(growth_percent, 2),
+            'avg_per_week': round(avg_per_week, 2),
+            'transaction_count': transaction_count
+        }
+
+        # Format date range for display
+        date_range_display = None
+        if from_date and to_date:
+            date_range_display = {
+                'from': from_date,
+                'to': to_date
+            }
+
         return jsonify({
             'success': True,
             'data': {
@@ -640,7 +691,12 @@ def get_dashboard():
                 'years': years,
                 'detected_mapping': CURRENT_MAPPING,  # ← Expose mapping for UI debugging
                 'metric_label': metric_label,
-                'capabilities': capabilities
+                'capabilities': capabilities,
+                # Phase 1 additions
+                'kpi': kpi_data,
+                'column_mapping': CURRENT_MAPPING,
+                'date_range': date_range_display,
+                'dataset_name': CURRENT_CSV_FILE or 'No dataset'
             }
         })
     except Exception as e:
@@ -703,6 +759,58 @@ def log_blockchain():
         
     except Exception as e:
         print(f"Blockchain Error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/reconcile', methods=['GET'])
+def reconcile_data():
+    """
+    Reconciliation endpoint: Recompute totals from raw data and compare
+    """
+    try:
+        df = load_data()
+        if df is None:
+            return jsonify({'success': False, 'error': 'No data available'}), 400
+        
+        # Get date range filter
+        from_date = request.args.get('from')
+        to_date = request.args.get('to')
+        
+        # Apply same filter as dashboard
+        df_filtered = df.copy()
+        if from_date or to_date:
+            date_col = CURRENT_MAPPING.get('date', 'InvoiceDate')
+            if from_date:
+                from_dt = pd.to_datetime(from_date)
+                df_filtered = df_filtered[df_filtered[date_col] >= from_dt]
+            if to_date:
+                to_dt = pd.to_datetime(to_date)
+                df_filtered = df_filtered[df_filtered[date_col] <= to_dt]
+        
+        # Recompute total from raw data
+        value_col = CURRENT_MAPPING.get('value', 'Quantity')
+        actual_total = float(df_filtered[value_col].sum())
+        
+        # Get displayed total from request (optional, for comparison)
+        displayed_total = request.args.get('displayed_total', type=float)
+        
+        if displayed_total is not None:
+            difference = actual_total - displayed_total
+            match = abs(difference) < 0.01  # Allow small floating point errors
+        else:
+            difference = 0
+            match = True
+        
+        return jsonify({
+            'success': True,
+            'actual_total': round(actual_total, 2),
+            'match': match,
+            'difference': round(difference, 2)
+        })
+        
+    except Exception as e:
+        print(f"Reconciliation Error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/reset-file', methods=['POST'])

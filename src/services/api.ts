@@ -47,6 +47,25 @@ export interface DashboardData {
     explanation: string;
   };
   years?: number[];
+  // Phase 1 additions
+  kpi?: {
+    total_value: number;
+    growth_percent: number;
+    avg_per_week: number;
+    transaction_count: number;
+  };
+  column_mapping?: {
+    date_col?: string;
+    value_col?: string;
+    product_col?: string;
+    region_col?: string;
+    customer_col?: string;
+  };
+  date_range?: {
+    from: string;
+    to: string;
+  };
+  dataset_name?: string;
 }
 
 let cachedData: DashboardData | null = null;
@@ -127,7 +146,12 @@ export const fetchDashboardData = async (
         root_cause: data.root_cause,
         years: data.years,
         metric_label: data.metric_label || 'Metric',
-        capabilities: data.capabilities || { hasProducts: true, hasRegions: true, hasCustomers: true }
+        capabilities: data.capabilities || { hasProducts: true, hasRegions: true, hasCustomers: true },
+        // Phase 1 additions
+        kpi: data.kpi,
+        column_mapping: data.column_mapping,
+        date_range: data.date_range,
+        dataset_name: data.dataset_name,
       };
     } else {
       // Backend returned error - throw it to be caught by Dashboard

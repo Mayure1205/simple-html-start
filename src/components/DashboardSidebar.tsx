@@ -33,7 +33,7 @@ export const DashboardSidebar = () => {
       <div className="space-y-4 pt-4 border-t">
         <div className="flex items-center justify-between">
           <div className="text-sm">
-            <p className="font-medium">{user?.username}</p>
+            <p className="font-medium">{user || 'Admin'}</p>
             <p className="text-xs text-muted-foreground">Logged in</p>
           </div>
           <ThemeToggle />
