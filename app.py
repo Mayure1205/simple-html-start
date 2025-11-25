@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from sklearn.linear_model import LinearRegression
 import hashlib
 import json
 from web3 import Web3
@@ -15,6 +14,9 @@ from csv_validator import validate_uploaded_csv
 from exceptions import CSVValidationError
 from field_detector import detect_fields, validate_and_clean_data
 from dynamic_rca import analyze_root_cause_dynamic
+
+# Enhanced ML forecasting module
+from ml.forecast import generate_ml_forecast
 
 app = Flask(__name__)
 CORS(app)
@@ -147,124 +149,13 @@ def load_data(csv_filename=None):
         return None
 
 
-def generate_ml_forecast(df, horizon=4):
-    """
-    Generate forecast using Linear Regression with accuracy measurement
-    """
-    # Aggregate weekly sales
-    weekly = df.set_index('InvoiceDate')['TotalAmount'].resample('W').sum().reset_index()
-    
-    # Filter out zero/negative weeks
-    weekly = weekly[weekly['TotalAmount'] > 100]
-    
-    if len(weekly) < 4:
-        # Fallback for small datasets: Try Daily
-        weekly = df.set_index('InvoiceDate')['TotalAmount'].resample('D').sum().reset_index()
-        if len(weekly) < 4:
-             raise ValueError("Insufficient data for forecasting (need at least 4 periods).")
-    
-    weekly['WeekNum'] = range(len(weekly))
-    
-    # ==========================================
-    # ACCURACY MEASUREMENT: Train/Test Split
-    # ==========================================
-    train_size = int(len(weekly) * 0.8)  # 80% train, 20% test
-    train_data = weekly[:train_size]
-    test_data = weekly[train_size:]
-    
-    # Prepare training data
-    X_train = train_data[['WeekNum']].values
-    y_train = train_data['TotalAmount'].values
-    
-    # Train Model
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-    
-    # Validate on test set (if enough data)
-    accuracy_metrics = {}
-    if len(test_data) > 0:
-        X_test = test_data[['WeekNum']].values
-        y_test = test_data['TotalAmount'].values
-        y_pred = model.predict(X_test)
-        
-        # Calculate MAPE (Mean Absolute Percentage Error)
-        mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
-        
-        # Calculate RMSE (Root Mean Squared Error)
-        rmse = np.sqrt(np.mean((y_test - y_pred) ** 2))
-        
-        # Calculate R² Score
-        from sklearn.metrics import r2_score
-        r2 = r2_score(y_test, y_pred)
-        
-        accuracy_metrics = {
-            'mape': round(float(mape), 2),
-            'rmse': round(float(rmse), 2),
-            'r2': round(float(r2), 3),
-            'accuracy': round(float(100 - mape), 2),  # Accuracy = 100 - MAPE
-            'confidence': 'HIGH' if mape < 15 else 'MEDIUM' if mape < 25 else 'LOW'
-        }
-        print(f"📊 Model Accuracy: {accuracy_metrics['accuracy']}% (MAPE: {mape:.2f}%)")
-    else:
-        # Not enough data for validation
-        accuracy_metrics = {
-            'mape': 0,
-            'rmse': 0,
-            'r2': 0,
-            'accuracy': 0,
-            'confidence': 'UNKNOWN'
-        }
-    
-    # Predict next N weeks (based on horizon)
-    last_week_num = weekly['WeekNum'].max()
-    future_weeks = np.array([[last_week_num + i] for i in range(1, horizon + 1)])
-    predictions = model.predict(future_weeks)
-    
-    # Format Forecast
-    last_date = weekly['InvoiceDate'].max()
-    last_actual_value = weekly.iloc[-1]['TotalAmount']
-
-    forecast = []
-    
-    # Add the last historical point as the first forecast point (to connect the lines)
-    forecast.append({
-        'week': last_date.strftime('%d %b'),
-        'sales': round(last_actual_value, 2),
-        'lower': round(last_actual_value, 2),
-        'upper': round(last_actual_value, 2)
-    })
-    
-    for i, pred in enumerate(predictions):
-        date = last_date + timedelta(weeks=i+1)
-        
-        # Christmas Boost Logic
-        if date.month == 12 and 18 <= date.day <= 31:
-            pred *= 1.4
-        
-        forecast.append({
-            'week': date.strftime('%d %b'),
-            'sales': round(pred, 2),
-            'lower': round(pred * 0.85, 2),
-            'upper': round(pred * 1.15, 2)
-        })
-        
-    # Historical Data (Last 8 weeks)
-    historical = weekly.tail(8).to_dict('records')
-    for h in historical:
-        h['date'] = h['InvoiceDate'].strftime('%d %b')
-        h['sales'] = round(h['TotalAmount'], 2)
-        del h['InvoiceDate']
-        del h['TotalAmount']
-        del h['WeekNum']
-        
-    # Store result
-    result = {
-        'historical': historical,
-        'forecast': forecast,
-        'totalForecast': sum([f['sales'] for f in forecast]),
-        'accuracy': accuracy_metrics
-    }
-    return result
+# Note: generate_ml_forecast is now imported from ml.forecast module
+# The new implementation includes:
+# - Auto-switching models (Prophet/SARIMAX/Baseline)
+# - Rolling-origin backtesting
+# - Anomaly detection
+# - Robust confidence flags
+# See ml/forecast.py for implementation details
 
 def analyze_root_cause(df):
     """
