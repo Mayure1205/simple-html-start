@@ -28,10 +28,10 @@ export const DisclaimerPopup = () => {
             <AlertCircle className="w-5 h-5 text-primary" />
           </div>
           <div className="flex-1">
-            <h3 className="font-bold text-lg mb-2">Important Notice</h3>
+            <h3 className="font-bold text-lg mb-2">Welcome to Dash AI</h3>
             <div className="text-sm text-muted-foreground space-y-2">
               <p>
-                This is a demonstration dashboard for REDACT Suraksha 2k25 hackathon.
+                Dash AI is an advanced analytics dashboard powered by artificial intelligence.
               </p>
               <p>
                 <strong>Features:</strong>
@@ -40,10 +40,10 @@ export const DisclaimerPopup = () => {
                 <li>AI-powered sales forecasting using ML models</li>
                 <li>RFM customer segmentation analysis</li>
                 <li>Blockchain-based forecast verification (requires Ganache)</li>
-                <li>Interactive data visualization</li>
+                <li>Interactive data visualization with heatmaps, waterfall charts, and more</li>
               </ul>
               <p className="text-xs mt-3 text-muted-foreground/70">
-                For demo purposes only. Blockchain features require Ganache CLI running on port 8545.
+                For optimal experience, ensure all required dependencies are installed.
               </p>
             </div>
           </div>

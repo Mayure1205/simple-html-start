@@ -1,11 +1,8 @@
-import { LayoutDashboard, LogOut, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
 import { ThemeToggle } from './ThemeToggle';
 
 export const DashboardSidebar = () => {
-  const { logout, user } = useAuth();
-
   return (
     <aside className="w-64 glass-card border-r min-h-screen p-6 flex flex-col">
       <div className="flex items-center gap-3 mb-8">
@@ -14,9 +11,9 @@ export const DashboardSidebar = () => {
         </div>
         <div>
           <h2 className="font-bold text-lg bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            REDACT
+            Dash AI
           </h2>
-          <p className="text-xs text-muted-foreground">Suraksha 2k25</p>
+          <p className="text-xs text-muted-foreground">Analytics Dashboard</p>
         </div>
       </div>
 
@@ -30,23 +27,8 @@ export const DashboardSidebar = () => {
         </Button>
       </nav>
 
-      <div className="space-y-4 pt-4 border-t">
-        <div className="flex items-center justify-between">
-          <div className="text-sm">
-            <p className="font-medium">{user || 'Admin'}</p>
-            <p className="text-xs text-muted-foreground">Logged in</p>
-          </div>
-          <ThemeToggle />
-        </div>
-        
-        <Button
-          variant="outline"
-          className="w-full justify-start gap-2 border-destructive/50 text-destructive hover:bg-destructive/10"
-          onClick={logout}
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </Button>
+      <div className="pt-4 border-t">
+        <ThemeToggle />
       </div>
     </aside>
   );
