@@ -49,19 +49,19 @@ export const AccuracyBadge = ({ metrics }: Props) => {
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
           <p className="text-muted-foreground">Accuracy</p>
-          <p className="font-semibold">{(metrics.accuracy * 100).toFixed(1)}%</p>
+          <p className="font-semibold">{metrics.accuracy.toFixed(1)}%</p>
         </div>
         <div>
           <p className="text-muted-foreground">MAPE</p>
-          <p className="font-semibold">{metrics.mape.toFixed(2)}%</p>
+          <p className="font-semibold">{metrics.mape !== null ? metrics.mape.toFixed(2) + '%' : 'N/A'}</p>
         </div>
         <div>
           <p className="text-muted-foreground">RMSE</p>
-          <p className="font-semibold">{metrics.rmse.toFixed(0)}</p>
+          <p className="font-semibold">{metrics.rmse !== null ? metrics.rmse.toFixed(0) : 'N/A'}</p>
         </div>
         <div>
           <p className="text-muted-foreground">R²</p>
-          <p className="font-semibold">{metrics.r2.toFixed(3)}</p>
+          <p className="font-semibold">{metrics.r2 !== null ? metrics.r2.toFixed(3) : 'N/A'}</p>
         </div>
       </div>
     </Card>

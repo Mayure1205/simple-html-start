@@ -18,6 +18,9 @@ from dynamic_rca import analyze_root_cause_dynamic
 # Enhanced ML forecasting module
 from ml.forecast import generate_ml_forecast
 
+# SUI Blockchain adapter
+from suiblockchain import log_forecast_to_sui
+
 app = Flask(__name__)
 CORS(app)
 
@@ -487,7 +490,13 @@ def get_dashboard():
                 'error': f'Insufficient data for {horizon}-week forecast. Need at least {min_required_days} days, got {date_span} days.'
             }), 400
 
-        # 1. Generate Forecast
+        # 1. Generate Forecast (with enhanced logging)
+        print(f"\n{'='*80}")
+        print(f"🚀 Generating forecast for {len(df_filtered)} transactions")
+        print(f"   Date range: {df_filtered['InvoiceDate'].min()} to {df_filtered['InvoiceDate'].max()}")
+        print(f"   Horizon: {horizon} weeks")
+        print(f"{'='*80}\n")
+        
         forecast = generate_ml_forecast(df_filtered, horizon=horizon)
         
         # 2. Calculate RFM (on filtered data)
@@ -497,9 +506,22 @@ def get_dashboard():
         # 3. Get Top Stats (on filtered data)
         countries, products = get_top_stats(df_filtered)
         
-        # 4. Generate Hash (based on filtered forecast)
-        data_to_hash = json.dumps(forecast['forecast'], sort_keys=True)
-        forecast_hash = hashlib.sha256(data_to_hash.encode()).hexdigest()
+        # 4. Log to SUI Blockchain and generate hash
+        print(f"\n{'='*80}")
+        print(f"⛓️  Logging forecast to SUI Testnet...")
+        print(f"{'='*80}\n")
+        
+        blockchain_result = log_forecast_to_sui(forecast, forecast['totalForecast'])
+        forecast_hash = blockchain_result['hash']
+        tx_hash = blockchain_result.get('tx_hash', 'Unavailable')
+        
+        if blockchain_result['success']:
+            print(f"✅ Forecast logged to blockchain successfully")
+            print(f"   Hash: {forecast_hash[:16]}...")
+            print(f"   TX: {tx_hash[:16]}...")
+        else:
+            print(f"⚠️  Blockchain logging failed: {blockchain_result['message']}")
+            print(f"   Hash stored locally: {forecast_hash[:16]}...")
         
         # 5. Root Cause Analysis (on filtered data)
         root_cause = analyze_root_cause_dynamic(df_filtered, CURRENT_MAPPING)
@@ -570,6 +592,14 @@ def get_dashboard():
                 'to': to_date
             }
 
+        print(f"\n{'='*80}")
+        print(f"✅ Dashboard data ready")
+        print(f"   Forecast: {forecast['totalForecast']:.2f} {metric_label}")
+        print(f"   Confidence: {forecast['accuracy']['confidence']}")
+        print(f"   Hash: {forecast_hash[:16]}...")
+        print(f"   TX Hash: {tx_hash[:16] if tx_hash != 'Unavailable' else 'Unavailable'}...")
+        print(f"{'='*80}\n")
+        
         return jsonify({
             'success': True,
             'data': {
@@ -578,6 +608,7 @@ def get_dashboard():
                 'countries': countries,
                 'products': products,
                 'hash': forecast_hash,
+                'tx_hash': tx_hash,  # Include TX hash from SUI
                 'root_cause': root_cause,
                 'years': years,
                 'detected_mapping': CURRENT_MAPPING,  # ← Expose mapping for UI debugging
