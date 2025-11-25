@@ -6,6 +6,7 @@ This module provides production-ready forecasting with:
 - Rolling-origin backtesting for robust accuracy metrics
 - Anomaly detection and outlier handling
 - Clear confidence flags and error handling
+- Comprehensive error logging and safe fallbacks
 """
 
 import pandas as pd
@@ -13,9 +14,18 @@ import numpy as np
 from datetime import timedelta
 from typing import Dict, List, Tuple, Optional
 import logging
+import warnings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Suppress timezone and other warnings
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', message='.*timezone.*')
+
+# Configure logging with more detail
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -247,27 +257,40 @@ def fit_prophet_model(weekly_df: pd.DataFrame, horizon: int) -> Tuple[List[float
     
     Returns:
         Tuple of (predictions, lower_bounds, upper_bounds)
+    
+    Raises:
+        ImportError: If Prophet is not installed
+        Exception: If model fitting fails
     """
     try:
         from prophet import Prophet
+        
+        logger.info("Attempting to fit Prophet model...")
         
         # Prepare data for Prophet (requires 'ds' and 'y' columns)
         prophet_df = weekly_df[['date', 'value']].copy()
         prophet_df.columns = ['ds', 'y']
         
-        # Configure Prophet
+        # Ensure timezone-naive dates (fixes timezone warnings)
+        if hasattr(prophet_df['ds'].dtype, 'tz') and prophet_df['ds'].dtype.tz is not None:
+            prophet_df['ds'] = prophet_df['ds'].dt.tz_localize(None)
+        
+        # Configure Prophet with error handling
         model = Prophet(
             yearly_seasonality=True,
             weekly_seasonality=False,  # Already weekly data
             daily_seasonality=False,
             seasonality_mode='multiplicative',
-            interval_width=0.85
+            interval_width=0.85,
+            uncertainty_samples=100  # Reduce for speed
         )
         
         # Suppress Prophet logging
         import logging as prophet_logging
-        prophet_logging.getLogger('prophet').setLevel(prophet_logging.WARNING)
+        prophet_logging.getLogger('prophet').setLevel(prophet_logging.ERROR)
+        prophet_logging.getLogger('cmdstanpy').setLevel(prophet_logging.ERROR)
         
+        # Fit with timeout/error handling
         model.fit(prophet_df)
         
         # Create future dataframe
@@ -284,14 +307,14 @@ def fit_prophet_model(weekly_df: pd.DataFrame, horizon: int) -> Tuple[List[float
         lower = np.maximum(lower, 0)
         upper = np.maximum(upper, 0)
         
-        logger.info("Prophet model fitted successfully")
+        logger.info(f"✓ Prophet model fitted successfully - {horizon} week forecast generated")
         return predictions.tolist(), lower.tolist(), upper.tolist()
         
-    except ImportError:
-        logger.warning("Prophet not available, falling back to ARIMA")
+    except ImportError as e:
+        logger.warning(f"Prophet not available: {e}")
         raise
     except Exception as e:
-        logger.error(f"Prophet fitting failed: {e}")
+        logger.error(f"✗ Prophet fitting failed: {type(e).__name__}: {e}")
         raise
 
 
@@ -401,6 +424,11 @@ def generate_ml_forecast(df: pd.DataFrame, horizon: int = 4) -> Dict:
     3. Performs rolling-origin backtesting
     4. Returns forecast with accuracy metrics in API-compatible format
     
+    SAFE FALLBACKS:
+    - If advanced models fail → use linear baseline
+    - If backtesting fails → return metrics as null with LOW confidence
+    - If any error occurs → return minimal valid response
+    
     Args:
         df: DataFrame with 'InvoiceDate' and 'TotalAmount' columns
         horizon: Forecast horizon in weeks (default: 4)
@@ -412,21 +440,33 @@ def generate_ml_forecast(df: pd.DataFrame, horizon: int = 4) -> Dict:
         - totalForecast: Sum of forecast values
         - accuracy: {mape, rmse, r2, accuracy, confidence}
     """
-    logger.info(f"Starting forecast generation with horizon={horizon}")
+    logger.info(f"=" * 80)
+    logger.info(f"🚀 Starting forecast generation with horizon={horizon} weeks")
+    logger.info(f"=" * 80)
     
     try:
         # 1. Prepare weekly series
+        logger.info("📊 Preparing weekly time series data...")
         weekly_df = prepare_weekly_series(df, 'InvoiceDate', 'TotalAmount')
         
         if len(weekly_df) < 4:
+            logger.error(f"✗ Insufficient data: {len(weekly_df)} weeks (need at least 4)")
             raise ValueError("Insufficient data for forecasting (need at least 4 weeks)")
         
+        logger.info(f"✓ Weekly series prepared: {len(weekly_df)} weeks")
+        logger.info(f"  Date range: {weekly_df['date'].min()} to {weekly_df['date'].max()}")
+        logger.info(f"  Value range: {weekly_df['value'].min():.2f} to {weekly_df['value'].max():.2f}")
+        logger.info(f"  Mean value: {weekly_df['value'].mean():.2f}")
+        
         # 2. Detect and handle anomalies
+        logger.info("🔍 Detecting anomalies...")
         cleaned_series, anomaly_indices = detect_and_handle_anomalies(weekly_df['value'])
         weekly_df['value_cleaned'] = cleaned_series
         
         if anomaly_indices:
-            logger.info(f"Anomalies detected at indices: {anomaly_indices[:5]}{'...' if len(anomaly_indices) > 5 else ''}")
+            logger.warning(f"⚠️  Detected {len(anomaly_indices)} anomalies at indices: {anomaly_indices[:5]}{'...' if len(anomaly_indices) > 5 else ''}")
+        else:
+            logger.info("✓ No anomalies detected")
         
         # Use cleaned data for modeling
         weekly_modeling = weekly_df[['date', 'value_cleaned']].copy()
@@ -436,58 +476,100 @@ def generate_ml_forecast(df: pd.DataFrame, horizon: int = 4) -> Dict:
         weekly_nonzero = weekly_modeling[weekly_modeling['value'] > 0].copy()
         weekly_points = len(weekly_nonzero)
         
-        logger.info(f"Weekly data points: {weekly_points} (after filtering zeros)")
+        logger.info(f"📈 Data points for modeling: {weekly_points} non-zero weeks")
         
         # 3. Model selection based on data availability
+        logger.info("🤖 Selecting optimal forecasting model...")
         model_used = None
         predictions = None
         lower_bounds = None
         upper_bounds = None
         confidence_override = None
+        model_selection_log = []
         
         if weekly_points >= ForecastConfig.SEASONAL_THRESHOLD:
             # Sufficient data for seasonal model
-            logger.info("Using seasonal model (Prophet or SARIMAX)")
+            logger.info(f"→ Data >= {ForecastConfig.SEASONAL_THRESHOLD} weeks: trying seasonal models")
+            model_selection_log.append("Attempted: Seasonal models (Prophet/SARIMAX)")
+            
             try:
                 predictions, lower_bounds, upper_bounds = fit_prophet_model(weekly_nonzero, horizon)
                 model_used = "Prophet (Seasonal)"
-            except:
+            except Exception as e1:
+                logger.warning(f"Prophet failed: {e1}, trying SARIMAX...")
+                model_selection_log.append(f"Prophet failed: {type(e1).__name__}")
                 try:
                     predictions, lower_bounds, upper_bounds = fit_arima_model(weekly_nonzero, horizon, seasonal=True)
                     model_used = "SARIMAX (Seasonal)"
-                except:
-                    # Fallback to non-seasonal
-                    predictions, lower_bounds, upper_bounds = fit_arima_model(weekly_nonzero, horizon, seasonal=False)
-                    model_used = "ARIMA (Non-seasonal)"
+                except Exception as e2:
+                    logger.warning(f"SARIMAX failed: {e2}, falling back to ARIMA...")
+                    model_selection_log.append(f"SARIMAX failed: {type(e2).__name__}")
+                    try:
+                        predictions, lower_bounds, upper_bounds = fit_arima_model(weekly_nonzero, horizon, seasonal=False)
+                        model_used = "ARIMA (Non-seasonal)"
+                    except Exception as e3:
+                        logger.error(f"All ARIMA models failed: {e3}, using baseline")
+                        model_selection_log.append(f"ARIMA failed: {type(e3).__name__}")
+                        predictions, lower_bounds, upper_bounds = fit_baseline_model(weekly_nonzero, horizon)
+                        model_used = "Linear Baseline (Fallback)"
+                        confidence_override = 'LOW'
                     
         elif weekly_points >= ForecastConfig.MIN_ARIMA_THRESHOLD:
             # Medium data: use ARIMA without full seasonality
-            logger.info("Using ARIMA model (reduced seasonality)")
+            logger.info(f"→ Data >= {ForecastConfig.MIN_ARIMA_THRESHOLD} weeks: trying ARIMA")
+            model_selection_log.append("Attempted: ARIMA")
+            
             try:
                 predictions, lower_bounds, upper_bounds = fit_arima_model(weekly_nonzero, horizon, seasonal=False)
                 model_used = "ARIMA"
-            except:
-                # Fallback to baseline
+            except Exception as e:
+                logger.warning(f"ARIMA failed: {e}, using baseline")
+                model_selection_log.append(f"ARIMA failed: {type(e).__name__}")
                 predictions, lower_bounds, upper_bounds = fit_baseline_model(weekly_nonzero, horizon)
-                model_used = "Linear Baseline"
+                model_used = "Linear Baseline (Fallback)"
                 confidence_override = 'LOW'
                 
         else:
             # Sparse data: use explainable baseline
-            logger.info("Using baseline model (insufficient data for advanced models)")
+            logger.info(f"→ Data < {ForecastConfig.MIN_ARIMA_THRESHOLD} weeks: using baseline")
+            model_selection_log.append("Used: Linear Baseline (sparse data)")
             predictions, lower_bounds, upper_bounds = fit_baseline_model(weekly_nonzero, horizon)
             model_used = "Linear Baseline"
             confidence_override = 'LOW'
         
-        logger.info(f"Model used: {model_used}")
+        logger.info(f"✓ Model selected: {model_used}")
+        for log_entry in model_selection_log:
+            logger.info(f"  - {log_entry}")
         
         # 4. Backtesting for accuracy metrics
+        logger.info("🎯 Running rolling-origin backtesting...")
         min_train_size = max(8, weekly_points // 2)  # At least 8 weeks or half the data
-        backtest_metrics = rolling_origin_backtest(weekly_nonzero['value'], horizon, min_train_size)
         
-        if backtest_metrics is None:
-            # Insufficient data for backtesting
-            logger.warning("Backtesting not possible - using placeholder metrics")
+        try:
+            backtest_metrics = rolling_origin_backtest(weekly_nonzero['value'], horizon, min_train_size)
+            
+            if backtest_metrics is None:
+                # Insufficient data for backtesting
+                logger.warning("⚠️  Backtesting not possible - insufficient data")
+                accuracy_metrics = {
+                    'mape': None,
+                    'rmse': None,
+                    'r2': None,
+                    'accuracy': 0,
+                    'confidence': confidence_override or 'LOW'
+                }
+            else:
+                accuracy_metrics = backtest_metrics
+                if confidence_override:
+                    accuracy_metrics['confidence'] = confidence_override
+                logger.info(f"✓ Backtesting complete:")
+                logger.info(f"  - MAPE: {accuracy_metrics['mape']:.2f}%")
+                logger.info(f"  - RMSE: {accuracy_metrics['rmse']:.2f}")
+                logger.info(f"  - R²: {accuracy_metrics['r2']:.3f}")
+                logger.info(f"  - Confidence: {accuracy_metrics['confidence']}")
+        
+        except Exception as e:
+            logger.error(f"✗ Backtesting failed: {e}")
             accuracy_metrics = {
                 'mape': None,
                 'rmse': None,
@@ -495,10 +577,6 @@ def generate_ml_forecast(df: pd.DataFrame, horizon: int = 4) -> Dict:
                 'accuracy': 0,
                 'confidence': confidence_override or 'LOW'
             }
-        else:
-            accuracy_metrics = backtest_metrics
-            if confidence_override:
-                accuracy_metrics['confidence'] = confidence_override
         
         # 5. Format output for API compatibility
         last_date = weekly_df['date'].max()
@@ -552,16 +630,29 @@ def generate_ml_forecast(df: pd.DataFrame, horizon: int = 4) -> Dict:
             'accuracy': accuracy_metrics
         }
         
-        logger.info(f"Forecast generation complete - Total: {total_forecast:.2f}, Confidence: {accuracy_metrics['confidence']}")
+        logger.info("=" * 80)
+        logger.info(f"✅ Forecast generation complete!")
+        logger.info(f"  Model: {model_used}")
+        logger.info(f"  Total Forecast: {total_forecast:.2f}")
+        logger.info(f"  Confidence: {accuracy_metrics['confidence']}")
+        logger.info(f"  Historical points: {len(historical)}")
+        logger.info(f"  Forecast points: {len(forecast)}")
+        logger.info("=" * 80)
         
         return result
         
     except Exception as e:
-        logger.error(f"Forecast generation failed: {e}")
+        logger.error("=" * 80)
+        logger.error(f"❌ FORECAST GENERATION FAILED")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {e}")
+        logger.error("=" * 80)
+        
         import traceback
         traceback.print_exc()
         
         # Return safe fallback with LOW confidence
+        logger.warning("⚠️  Returning safe fallback response with LOW confidence")
         return {
             'historical': [],
             'forecast': [],
