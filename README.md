@@ -1,7 +1,7 @@
 # 📊 ChainForecast – REDACT Suraksha 2k25
 
 **Premium Retail CRM with AI-Powered Forecasting & Blockchain Verification**
-
+<!-- // hello -->
 ChainForecast is a state-of-the-art dashboard designed for retail analytics. It combines advanced Machine Learning (ARIMA/Linear Regression) for sales forecasting with Blockchain technology (Ganache) to ensure data integrity.
 done
 ---
