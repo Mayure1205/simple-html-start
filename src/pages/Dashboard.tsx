@@ -3,6 +3,10 @@ import { CountryBarChart } from '@/components/charts/CountryBarChart';
 import { ForecastLineChart } from '@/components/charts/ForecastLineChart';
 import { ProductBarChart } from '@/components/charts/ProductBarChart';
 import { RFMDonutChart } from '@/components/charts/RFMDonutChart';
+import { HeatmapCalendar } from '@/components/charts/HeatmapCalendar';
+import { WaterfallChart } from '@/components/charts/WaterfallChart';
+import { GeographicMap } from '@/components/charts/GeographicMap';
+import { FunnelChart } from '@/components/charts/FunnelChart';
 import { ColumnMapping, ColumnMappingModal } from '@/components/ColumnMappingModal';
 import { CSVUploadModal } from '@/components/CSVUploadModal';
 import { CustomerTable } from '@/components/CustomerTable';
@@ -293,7 +297,7 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Dashboard
+              Dash AI Analytics
             </h1>
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
@@ -461,6 +465,58 @@ const Dashboard = () => {
                       )}
                     </div>
                 </div>
+
+                {/* NEW VISUALIZATIONS */}
+                
+                {/* Heatmap Calendar */}
+                {data.historical && data.historical.length > 0 && (
+                  <HeatmapCalendar
+                    data={data.historical.map(h => ({ date: h.week, value: h.sales }))}
+                    metricLabel={metricLabel}
+                  />
+                )}
+
+                {/* Waterfall Chart */}
+                {data.kpi && (
+                  <WaterfallChart
+                    data={{
+                      total: data.kpi.total_value,
+                      segments: [
+                        { label: 'Previous Period', value: data.kpi.total_value / (1 + data.kpi.growth_percent / 100), isPositive: true },
+                        { label: 'Growth', value: data.kpi.total_value - (data.kpi.total_value / (1 + data.kpi.growth_percent / 100)), isPositive: data.kpi.growth_percent >= 0 },
+                      ]
+                    }}
+                    metricLabel={metricLabel}
+                  />
+                )}
+
+                {/* Geographic Map */}
+                {hasRegionData && (
+                  <GeographicMap
+                    data={data.countries.map((c, i, arr) => ({
+                      ...c,
+                      percentage: arr.reduce((sum, item) => sum + item.value, 0) > 0 
+                        ? (c.value / arr.reduce((sum, item) => sum + item.value, 0)) * 100 
+                        : 0
+                    }))}
+                    metricLabel={metricLabel}
+                  />
+                )}
+
+                {/* Funnel Chart */}
+                {hasCustomerData && rfmChartData.length >= 3 && (
+                  <FunnelChart
+                    data={(() => {
+                      const totalCount = rfmChartData.reduce((sum, c) => sum + c.count, 0);
+                      return [
+                        { stage: 'Total Customers', count: totalCount, percentage: 100 },
+                        { stage: 'VIP/Loyal', count: rfmChartData.filter(c => c.segment === 'VIP' || c.segment === 'Loyal').reduce((sum, c) => sum + c.count, 0), percentage: 0 },
+                        { stage: 'Active VIP', count: rfmChartData.find(c => c.segment === 'VIP')?.count || 0, percentage: 0 },
+                      ].map((s, i, arr) => ({ ...s, percentage: totalCount > 0 ? (s.count / totalCount) * 100 : 0 }));
+                    })()}
+                    title="Customer Engagement Funnel"
+                  />
+                )}
 
                 {/* RFM Chart */}
                 <div className="relative">
