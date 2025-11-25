@@ -426,42 +426,41 @@ const Dashboard = () => {
                 )}
 
                 {/* Forecast Chart */}
-                <div className="relative">
-                  {hasNoData && (
+                <div className="glass-card p-4 min-h-[260px] flex flex-col relative">
+                  {hasNoData ? (
                     <NoDataOverlay 
                       message={data.hash === 'No Data' && data.total_forecast === 0 ? "No CSV file uploaded yet" : "No data available for selected date range"}
                       showUploadButton={data.hash === 'No Data' && data.total_forecast === 0}
                       onUploadClick={() => setIsUploadModalOpen(true)}
                     />
-                  )}
-                  <ForecastLineChart
+                  ) : (
+                    <ForecastLineChart
                       historical={data.historical}
                       forecast={data.forecast}
                       metricLabel={metricLabel}
                       horizon={forecastHorizon}
-                  />
+                    />
+                  )}
                 </div>
 
                 {/* Country and Product Charts */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="relative">
-                      {hasNoData && <NoDataOverlay />}
-                      {hasRegionData ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 auto-rows-max">
+                    <div className="glass-card p-4 min-h-[260px] flex flex-col relative">
+                      {hasNoData ? (
+                        <NoDataOverlay message="No data available for selected date range" />
+                      ) : hasRegionData ? (
                         <CountryBarChart data={data.countries} valueLabel={metricLabel} />
                       ) : (
-                        <NoDataOverlay 
-                          message="Map Region column to unlock Regional Insights" 
-                        />
+                        <NoDataOverlay message="Map Region column to unlock Regional Insights" />
                       )}
                     </div>
-                    <div className="relative">
-                      {hasNoData && <NoDataOverlay />}
-                      {hasProductData ? (
+                    <div className="glass-card p-4 min-h-[260px] flex flex-col relative">
+                      {hasNoData ? (
+                        <NoDataOverlay message="No data available for selected date range" />
+                      ) : hasProductData ? (
                         <ProductBarChart data={data.products} valueLabel={metricLabel} />
                       ) : (
-                        <NoDataOverlay 
-                          message="Map Product column to unlock Product Insights" 
-                        />
+                        <NoDataOverlay message="Map Product column to unlock Product Insights" />
                       )}
                     </div>
                 </div>
@@ -519,9 +518,10 @@ const Dashboard = () => {
                 )}
 
                 {/* RFM Chart */}
-                <div className="relative">
-                  {hasNoData && <NoDataOverlay />}
-                  {data.rfm.available && rfmChartData.length > 0 ? (
+                <div className="glass-card p-4 min-h-[260px] flex flex-col relative">
+                  {hasNoData ? (
+                    <NoDataOverlay message="No data available for selected date range" />
+                  ) : data.rfm.available && rfmChartData.length > 0 ? (
                     <RFMDonutChart data={rfmChartData} />
                   ) : (
                     <NoDataOverlay message="Map Customer ID column to unlock Customer Segmentation (RFM Analysis)" />
@@ -529,9 +529,10 @@ const Dashboard = () => {
                 </div>
 
                 {/* Customer Table */}
-                <div className="relative">
-                  {hasNoData && <NoDataOverlay />}
-                  {hasCustomerData ? (
+                <div className="glass-card p-4 min-h-[260px] flex flex-col relative">
+                  {hasNoData ? (
+                    <NoDataOverlay message="No data available for selected date range" />
+                  ) : hasCustomerData ? (
                     <CustomerTable customers={data.customers} metricLabel={metricLabel} />
                   ) : (
                     <NoDataOverlay message="Customer details unavailable for this dataset" />
