@@ -1,7 +1,10 @@
-flask
-flask-cors
-pandas
-numpy
-web3
-scikit-learn
-py-solc-x
+flask==3.0.0
+flask-cors==4.0.0
+pandas==2.1.4
+numpy==1.26.2
+web3==6.11.3
+scikit-learn==1.3.2
+py-solc-x==2.0.2
+prophet==1.1.5
+pmdarima==2.0.4
+statsmodels==0.14.1
