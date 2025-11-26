@@ -449,58 +449,40 @@ def upload_csv():
         
         # Update global state with storage filename
         CURRENT_CSV_FILE = storage_filename
-            data_cache.clear()
+        data_cache.clear()
+        
+        # If high confidence and all required fields found → auto-apply mapping
+        if confidence == 'high' and not missing_required:
+            CURRENT_MAPPING = mapping
             
-            # If high confidence and all required fields found → auto-apply mapping
-            if confidence == 'high' and not missing_required:
-                CURRENT_MAPPING = mapping
-                
-                # Clean and validate data
-                df_clean, clean_warnings = validate_and_clean_data(df, mapping)
-                warnings.extend(clean_warnings)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'File uploaded and fields auto-detected!',
-                    'filename': filename,
-                    'mapping': mapping,
-                    'confidence': confidence,
-                    'warnings': warnings,
-                    'requires_mapping': False,  # ✅ No manual mapping needed!
-                    'auto_detected': True
-                })
+            # Clean and validate data
+            df_clean, clean_warnings = validate_and_clean_data(df, mapping)
+            warnings.extend(clean_warnings)
             
-            # If medium/low confidence OR missing required → ask user to confirm/edit
-            else:
-                CURRENT_MAPPING = {}  # Don't auto-apply yet
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'Please confirm or adjust field mapping',
-                    'filename': filename,
-                    'columns': df.columns.tolist(),
-                    'suggested_mapping': mapping,
-                    'confidence': confidence,
-                    'confidence_scores': detection['confidence_scores'],
-                    'warnings': warnings,
-                    'missing_required': missing_required,
-                    'requires_mapping': True,  # ⚠️ User confirmation needed
-                    'auto_detected': False
-                })
+            return jsonify({
+                'success': True,
+                'message': 'File uploaded and fields auto-detected!',
+                'filename': filename,
+                'mapping': mapping,
+                'confidence': confidence,
+                'warnings': warnings,
+                'requires_mapping': False,  # ✅ No manual mapping needed!
+                'auto_detected': True
+            })
+        
+        # If medium/low confidence OR missing required → ask user to confirm/edit
+        else:
+            CURRENT_MAPPING = {}  # Don't auto-apply yet
             
-        except CSVValidationError as e:
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            return jsonify({'error': str(e)}), 400
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({'error': f'Invalid CSV: {str(e)}'}), 400
-            
-    return jsonify({'error': 'Invalid file type'}), 400
-
-@app.route('/api/save-mapping', methods=['POST'])
-def save_mapping():
+            return jsonify({
+                'success': True,
+                'message': 'Please confirm or adjust field mapping',
+                'filename': filename,
+                'columns': df.columns.tolist(),
+                'suggested_mapping': mapping,
+                'confidence': confidence,
+                'confidence_scores': detection['confidence_scores'],
+                'warnings': warnings,
     global CURRENT_MAPPING, data_cache
     
     try:

@@ -1,0 +1,24 @@
+# Production V1 Dependencies
+
+# Core
+Flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+
+# Database
+SQLAlchemy==2.0.23
+psycopg2-binary==2.9.9
+
+# Auth & Security
+PyJWT==2.8.0
+Flask-Limiter==3.5.0
+
+# Existing dependencies
+pandas==2.1.3
+numpy==1.26.2
+scikit-learn==1.3.2
+prophet==1.1.5
+pmdarima==2.0.4
+statsmodels==0.14.0
+web3==6.11.3
+werkzeug==3.0.1
