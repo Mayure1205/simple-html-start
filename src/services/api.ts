@@ -1,4 +1,5 @@
 import { DateRange } from "react-day-picker";
+import { toast } from "@/hooks/use-toast";
 
 export interface DashboardData {
   total_forecast: number;
@@ -96,7 +97,37 @@ export const fetchDashboardData = async (
     const queryString = params.toString();
     const url = queryString ? `/api/dashboard?${queryString}` : '/api/dashboard';
 
-    const response = await fetch(url);
+    // Timeout warning for slow forecasts
+    let timeoutWarning: NodeJS.Timeout | null = null;
+    let warningShown = false;
+    
+    const fetchPromise = fetch(url);
+    
+    // Show warning if request takes longer than 15 seconds
+    timeoutWarning = setTimeout(() => {
+      warningShown = true;
+      console.warn("⏳ Forecast is taking longer than usual. Please wait...");
+      toast({
+        title: "Processing Forecast",
+        description: "Forecast is taking longer than usual. Please wait...",
+        duration: 10000,
+      });
+    }, 15000);
+    
+    const response = await fetchPromise;
+    
+    // Clear timeout if request completed
+    if (timeoutWarning) {
+      clearTimeout(timeoutWarning);
+    }
+    
+    // Show success if warning was shown
+    if (warningShown) {
+      toast({
+        title: "Forecast Complete",
+        description: "Analysis finished successfully!",
+      });
+    }
     const text = await response.text();
 
     let result;
@@ -159,7 +190,25 @@ export const fetchDashboardData = async (
     }
   } catch (error) {
     console.error("❌ Error loading API data:", error);
-    // Re-throw the error - NO FALLBACK to mock data
+    cachedData = null;
+    
+    // User-friendly error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        toast({
+          title: "Network Error",
+          description: "Unable to connect to the server. Please check your connection and try again.",
+          variant: "destructive",
+        });
+      } else if (error.message.includes('timeout')) {
+        toast({
+          title: "Request Timeout",
+          description: "The forecast request took too long. Please try again with a shorter date range or smaller dataset.",
+          variant: "destructive",
+        });
+      }
+    }
+    
     throw error;
   }
 };

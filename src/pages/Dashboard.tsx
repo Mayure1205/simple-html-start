@@ -490,17 +490,42 @@ const Dashboard = () => {
                 )}
 
                 {/* Geographic Map */}
-                {hasRegionData && (
-                  <GeographicMap
-                    data={data.countries.map((c, i, arr) => ({
+                {hasRegionData && (() => {
+                  // Filter out malformed/invalid country data
+                  const validCountries = data.countries
+                    .filter(c => 
+                      c.country && 
+                      typeof c.country === 'string' && 
+                      c.country.trim() !== '' &&
+                      c.value != null &&
+                      !isNaN(c.value) &&
+                      isFinite(c.value)
+                    )
+                    .map(c => ({
                       ...c,
-                      percentage: arr.reduce((sum, item) => sum + item.value, 0) > 0 
-                        ? (c.value / arr.reduce((sum, item) => sum + item.value, 0)) * 100 
-                        : 0
-                    }))}
-                    metricLabel={metricLabel}
-                  />
-                )}
+                      country: c.country.trim() // Normalize whitespace
+                    }));
+                  
+                  const totalValue = validCountries.reduce((sum, item) => sum + item.value, 0);
+                  
+                  if (validCountries.length === 0) {
+                    return (
+                      <div className="glass-card p-6 border-2 border-primary/20 text-center text-muted-foreground">
+                        No valid geographic data available for this selection.
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <GeographicMap
+                      data={validCountries.map(c => ({
+                        ...c,
+                        percentage: totalValue > 0 ? (c.value / totalValue) * 100 : 0
+                      }))}
+                      metricLabel={metricLabel}
+                    />
+                  );
+                })()}
 
                 {/* Funnel Chart */}
                 {hasCustomerData && rfmChartData.length >= 3 && (
