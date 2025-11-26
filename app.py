@@ -3,11 +3,13 @@ import pandas as pd
 import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
 import hashlib
 import json
 from web3 import Web3
 from datetime import datetime, timedelta
 import time
+import uuid
 
 # Custom modules
 from csv_validator import validate_uploaded_csv
@@ -22,18 +24,31 @@ from ml.forecast import generate_ml_forecast
 from suiblockchain import log_forecast_to_sui
 
 app = Flask(__name__)
-CORS(app)
+
+# FIXED SEC-004: Restrict CORS to specific origins
+ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://localhost:5173').split(',')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 
 # ==========================================
 # 🔧 CONFIGURATION
 # ==========================================
-GANACHE_URL = "http://127.0.0.1:8545"
+# FIXED SEC-005: Use environment variables instead of hardcoded values
+GANACHE_URL = os.getenv('BLOCKCHAIN_URL', "http://127.0.0.1:8545")
 CONTRACT_ADDRESS_FILE = "contract_address.txt"
 
 # CSV Upload Configuration
 UPLOAD_FOLDER = 'uploads'
-CURRENT_CSV_FILE = None  # No default - force user to upload CSV
-CURRENT_MAPPING = {}  # Stores column mapping: {'date': '...', 'value': '...'}
+DEFAULT_CSV = None
+CURRENT_CSV_FILE = None
+CURRENT_MAPPING = {}
+
+# FIXED SEC-002: File upload security
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB limit
+ALLOWED_EXTENSIONS = {'csv', 'txt'}
+
+def allowed_file(filename):
+    """Check if file extension is allowed"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Create uploads folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -185,43 +200,6 @@ def analyze_root_cause(df):
         pct_change = (change / prev_total) * 100 if prev_total > 0 else 0
         
         # 4. Analyze by Product (Top Drivers)
-        curr_prod = current_period.groupby('Description')['TotalAmount'].sum()
-        prev_prod = previous_period.groupby('Description')['TotalAmount'].sum()
-        
-        # Align indexes to calculate variance
-        all_products = curr_prod.index.union(prev_prod.index)
-        curr_prod = curr_prod.reindex(all_products, fill_value=0)
-        prev_prod = prev_prod.reindex(all_products, fill_value=0)
-        
-        prod_variance = (curr_prod - prev_prod).sort_values(ascending=False)
-        
-        # Top Gainer & Loser
-        top_gainer = prod_variance.index[0]
-        top_gainer_amt = prod_variance.iloc[0]
-        
-        top_loser = prod_variance.index[-1]
-        top_loser_amt = prod_variance.iloc[-1]
-        
-        # 5. Analyze by Country
-        curr_country = current_period.groupby('Country')['TotalAmount'].sum()
-        prev_country = previous_period.groupby('Country')['TotalAmount'].sum()
-        
-        all_countries = curr_country.index.union(prev_country.index)
-        curr_country = curr_country.reindex(all_countries, fill_value=0)
-        prev_country = prev_country.reindex(all_countries, fill_value=0)
-        
-        country_variance = (curr_country - prev_country).sort_values(ascending=False)
-        top_country_change = country_variance.index[0] if abs(country_variance.iloc[0]) > abs(country_variance.iloc[-1]) else country_variance.index[-1]
-        
-        # 6. Generate Insight
-        status = "Growth" if change > 0 else "Decline"
-        insight = f"Value showed {status} of {pct_change:.1f}% ({abs(change):,.0f}). "
-        
-        reasons = []
-        if top_gainer_amt > 0:
-            reasons.append(f"driven by '{top_gainer}' (+{top_gainer_amt:,.0f})")
-        if top_loser_amt < 0:
-            reasons.append(f"offset by drop in '{top_loser}' ({top_loser_amt:,.0f})")
             
         explanation = insight + " Mainly " + ", and ".join(reasons) + "."
         
@@ -350,30 +328,54 @@ def upload_csv():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
     
-    if file and file.filename.endswith('.csv'):
-        filename = file.filename
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
+    # FIXED SEC-002: Validate file extension
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Only CSV files are allowed'}), 400
+    
+    # FIXED SEC-003: Sanitize filename to prevent path traversal
+    safe_filename_str = secure_filename(file.filename)
+    if not safe_filename_str:
+        return jsonify({'error': 'Invalid filename'}), 400
+    
+    # FIXED SEC-002: Check file size
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({
+            'error': f'File too large. Maximum size: {MAX_FILE_SIZE/1024/1024:.0f}MB'
+        }), 413
+    
+    # Use UUID to avoid filename conflicts
+    storage_filename = f"{uuid.uuid4().hex}_{safe_filename_str}"
+    filepath = os.path.join(UPLOAD_FOLDER, storage_filename)
+    
+    # FIXED SEC-003: Ensure path is within UPLOAD_FOLDER
+    abs_upload = os.path.abspath(UPLOAD_FOLDER)
+    abs_filepath = os.path.abspath(filepath)
+    if not abs_filepath.startswith(abs_upload):
+        return jsonify({'error': 'Invalid file path'}), 400
+    
+    try:
+        # Validate and load CSV
+        df = validate_uploaded_csv(file, filepath)
         
-        try:
-            # Validate and load CSV
-            df = validate_uploaded_csv(file, filepath)
-            
-            # 🔍 AUTO-DETECT FIELDS
-            detection = detect_fields(df)
-            
-            mapping = detection['mapping']
-            confidence = detection['confidence']
-            warnings = detection['warnings']
-            
-            # Check if required fields were detected
-            missing_required = []
-            if not mapping.get('date'):
-                missing_required.append('date')
-            if not mapping.get('value'):
-                missing_required.append('value')
-            
-            # Update global state
-            CURRENT_CSV_FILE = filename
+        # 🔍 AUTO-DETECT FIELDS
+        detection = detect_fields(df)
+        
+        mapping = detection['mapping']
+        confidence = detection['confidence']
+        warnings = detection['warnings']
+        
+        # Check if required fields were detected
+        missing_required = []
+        if not mapping.get('date'):
+            missing_required.append('date')
+        if not mapping.get('value'):
+            missing_required.append('value')
+        
+        # Update global state with storage filename
+        CURRENT_CSV_FILE = storage_filename
             data_cache.clear()
             
             # If high confidence and all required fields found → auto-apply mapping

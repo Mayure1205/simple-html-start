@@ -15,6 +15,8 @@ from datetime import timedelta
 from typing import Dict, List, Tuple, Optional
 import logging
 import warnings
+import signal
+from functools import wraps
 
 # Suppress timezone and other warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -27,6 +29,41 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class TimeoutError(Exception):
+    """Raised when a function times out"""
+    pass
+
+
+def timeout(seconds=20):
+    """
+    Timeout decorator for model fitting functions
+    
+    Args:
+        seconds: Maximum time allowed for function execution
+    
+    Raises:
+        TimeoutError: If function exceeds time limit
+    """
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutError(f"Function {func.__name__} timed out after {seconds} seconds")
+        
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set the signal handler and alarm
+            old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                # Disable the alarm and restore old handler
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+            return result
+        return wrapper
+    return decorator
 
 
 class ForecastConfig:
@@ -242,60 +279,6 @@ def rolling_origin_backtest(series: pd.Series, horizon: int, min_train_size: int
         np.array(all_predictions)
     )
     
-    logger.info(f"Backtest complete - MAPE: {metrics['mape']:.2f}%, Confidence: {metrics['confidence']}")
-    
-    return metrics
-
-
-def fit_prophet_model(weekly_df: pd.DataFrame, horizon: int) -> Tuple[List[float], List[float], List[float]]:
-    """
-    Fit Prophet model for seasonal forecasting
-    
-    Args:
-        weekly_df: Weekly data with 'date' and 'value' columns
-        horizon: Forecast horizon in weeks
-    
-    Returns:
-        Tuple of (predictions, lower_bounds, upper_bounds)
-    
-    Raises:
-        ImportError: If Prophet is not installed
-        Exception: If model fitting fails
-    """
-    try:
-        from prophet import Prophet
-        
-        logger.info("Attempting to fit Prophet model...")
-        
-        # Prepare data for Prophet (requires 'ds' and 'y' columns)
-        prophet_df = weekly_df[['date', 'value']].copy()
-        prophet_df.columns = ['ds', 'y']
-        
-        # Ensure timezone-naive dates (fixes timezone warnings)
-        if hasattr(prophet_df['ds'].dtype, 'tz') and prophet_df['ds'].dtype.tz is not None:
-            prophet_df['ds'] = prophet_df['ds'].dt.tz_localize(None)
-        
-        # Configure Prophet with error handling
-        model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=False,  # Already weekly data
-            daily_seasonality=False,
-            seasonality_mode='multiplicative',
-            interval_width=0.85,
-            uncertainty_samples=100  # Reduce for speed
-        )
-        
-        # Suppress Prophet logging
-        import logging as prophet_logging
-        prophet_logging.getLogger('prophet').setLevel(prophet_logging.ERROR)
-        prophet_logging.getLogger('cmdstanpy').setLevel(prophet_logging.ERROR)
-        
-        # Fit with timeout/error handling
-        model.fit(prophet_df)
-        
-        # Create future dataframe
-        future = model.make_future_dataframe(periods=horizon, freq='W')
-        forecast = model.predict(future)
         
         # Extract forecast values (last 'horizon' rows)
         predictions = forecast['yhat'].tail(horizon).values
