@@ -279,6 +279,45 @@ def rolling_origin_backtest(series: pd.Series, horizon: int, min_train_size: int
         np.array(all_predictions)
     )
     
+    return metrics
+
+
+def fit_prophet_model(weekly_df: pd.DataFrame, horizon: int) -> Tuple[List[float], List[float], List[float]]:
+    """
+    Fit Prophet model for time series forecasting
+    
+    Args:
+        weekly_df: Weekly data with 'date' and 'value' columns
+        horizon: Forecast horizon in weeks
+    
+    Returns:
+        Tuple of (predictions, lower_bounds, upper_bounds)
+    """
+    try:
+        from prophet import Prophet
+        
+        # Suppress timezone warnings
+        import warnings
+        warnings.filterwarnings('ignore', category=FutureWarning)
+        
+        # Prepare data for Prophet (requires 'ds' and 'y' columns)
+        prophet_df = weekly_df.copy()
+        prophet_df.columns = ['ds', 'y']
+        
+        # Initialize and fit Prophet model
+        model = Prophet(
+            yearly_seasonality=True,
+            weekly_seasonality=False,
+            daily_seasonality=False,
+            seasonality_mode='multiplicative',
+            interval_width=0.85
+        )
+        
+        model.fit(prophet_df)
+        
+        # Create future dataframe
+        future = model.make_future_dataframe(periods=horizon, freq='W')
+        forecast = model.predict(future)
         
         # Extract forecast values (last 'horizon' rows)
         predictions = forecast['yhat'].tail(horizon).values
