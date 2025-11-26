@@ -15,7 +15,6 @@ import uuid
 from csv_validator import validate_uploaded_csv
 from exceptions import CSVValidationError
 from field_detector import detect_fields, validate_and_clean_data
-from dynamic_rca import analyze_root_cause_dynamic
 
 # Enhanced ML forecasting module
 from ml.forecast import generate_ml_forecast
@@ -179,6 +178,7 @@ def analyze_root_cause(df):
     """
     Analyze WHY sales changed.
     Compares Last 4 Weeks vs Previous 4 Weeks.
+    FIXED: Added defensive checks for edge cases (0 or 1 product/country)
     """
     try:
         # 1. Setup Dates
@@ -191,7 +191,10 @@ def analyze_root_cause(df):
         previous_period = df[(df['InvoiceDate'] <= cutoff_current) & (df['InvoiceDate'] > cutoff_previous)]
         
         if current_period.empty or previous_period.empty:
-            return None
+            return {
+                'available': False,
+                'reason': 'Insufficient data for root cause analysis (need at least 8 weeks of data)'
+            }
 
         # 3. Calculate Totals
         curr_total = current_period['TotalAmount'].sum()
@@ -199,11 +202,76 @@ def analyze_root_cause(df):
         change = curr_total - prev_total
         pct_change = (change / prev_total) * 100 if prev_total > 0 else 0
         
-        # 4. Analyze by Product (Top Drivers)
+        # 4. Defensive checks for products and countries
+        has_products = 'Description' in df.columns
+        has_countries = 'Country' in df.columns
+        
+        # Check if we have enough distinct products/countries for analysis
+        distinct_products = df['Description'].nunique() if has_products else 0
+        distinct_countries = df['Country'].nunique() if has_countries else 0
+        
+        # Need at least 2 products OR 2 countries for meaningful root cause analysis
+        if distinct_products < 2 and distinct_countries < 2:
+            return {
+                'available': False,
+                'reason': 'Not enough data for root cause analysis (need at least 2 distinct products or countries)'
+            }
+        
+        # 5. Analyze by Product (Top Drivers) - only if we have products
+        top_gainer = 'N/A'
+        top_gainer_amt = 0
+        top_loser = 'N/A'
+        top_loser_amt = 0
+        
+        if has_products and distinct_products >= 2:
+            try:
+                prod_curr = current_period.groupby('Description')['TotalAmount'].sum()
+                prod_prev = previous_period.groupby('Description')['TotalAmount'].sum()
+                prod_change = (prod_curr - prod_prev).fillna(prod_curr)
+                
+                if not prod_change.empty:
+                    top_gainer_val = prod_change.idxmax()
+                    top_gainer = str(top_gainer_val) if pd.notna(top_gainer_val) else 'N/A'
+                    top_gainer_amt = prod_change.max()
+                    
+                    top_loser_val = prod_change.idxmin()
+                    top_loser = str(top_loser_val) if pd.notna(top_loser_val) else 'N/A'
+                    top_loser_amt = prod_change.min()
+            except Exception as e:
+                print(f"⚠️  Product analysis failed: {e}")
+        
+        # 6. Analyze by Country - only if we have countries
+        top_country_change = 'N/A'
+        if has_countries and distinct_countries >= 2:
+            try:
+                country_curr = current_period.groupby('Country')['TotalAmount'].sum()
+                country_prev = previous_period.groupby('Country')['TotalAmount'].sum()
+                country_change = (country_curr - country_prev).fillna(country_curr)
+                
+                if not country_change.empty:
+                    top_country_val = country_change.idxmax()
+                    top_country_change = str(top_country_val) if pd.notna(top_country_val) else 'N/A'
+            except Exception as e:
+                print(f"⚠️  Country analysis failed: {e}")
+        
+        # 7. Build explanation
+        insight = "Revenue increased" if change >= 0 else "Revenue decreased"
+        reasons = []
+        
+        if top_gainer != 'N/A' and top_gainer_amt > 0:
+            reasons.append(f"{top_gainer} grew by ${top_gainer_amt:.0f}")
+        if top_loser != 'N/A' and top_loser_amt < 0:
+            reasons.append(f"{top_loser} declined by ${abs(top_loser_amt):.0f}")
+        if top_country_change != 'N/A':
+            reasons.append(f"driven by {top_country_change}")
+        
+        if not reasons:
+            reasons = ["general market trends"]
             
-        explanation = insight + " Mainly " + ", and ".join(reasons) + "."
+        explanation = insight + ". Mainly " + ", and ".join(reasons) + "."
         
         return {
+            'available': True,
             'period': 'Last 28 Days vs Previous',
             'change_amount': round(change, 2),
             'change_percent': round(pct_change, 2),
@@ -215,7 +283,12 @@ def analyze_root_cause(df):
         
     except Exception as e:
         print(f"❌ Error in RCA: {e}")
-        return None
+        import traceback
+        traceback.print_exc()
+        return {
+            'available': False,
+            'reason': f'Root cause analysis failed: {str(e)}'
+        }
 
 def get_top_stats(df):
     """Get Top Countries and Products"""
@@ -526,7 +599,7 @@ def get_dashboard():
             print(f"   Hash stored locally: {forecast_hash[:16]}...")
         
         # 5. Root Cause Analysis (on filtered data)
-        root_cause = analyze_root_cause_dynamic(df_filtered, CURRENT_MAPPING)
+        root_cause = analyze_root_cause(df_filtered)
         
         # 6. Available Years (from FULL dataset, not filtered)
         date_col = CURRENT_MAPPING.get('date', 'InvoiceDate')
