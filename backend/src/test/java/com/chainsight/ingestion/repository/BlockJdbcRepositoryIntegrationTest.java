@@ -111,6 +111,7 @@ class BlockJdbcRepositoryIntegrationTest {
                 repository,
                 transactionTemplate,
                 Runnable::run,
+                Runnable::run,
                 ingestionLockService,
                 ETHEREUM_CHAIN_ID,
                 100
@@ -129,7 +130,7 @@ class BlockJdbcRepositoryIntegrationTest {
         StartIngestionRequest request = new StartIngestionRequest(ETHEREUM_CHAIN_ID, startBlock, endBlock);
         IngestionJobResponse firstRun = service.ingestRange(request);
 
-        assertThat(firstRun.processedBlocks()).isEqualTo(3);
+        assertThat(firstRun.status()).isEqualTo("RUNNING");
         assertThat(firstRun.skippedBlocks()).isZero();
         assertThat(repository.getLastProcessedBlock(ETHEREUM_CHAIN_ID)).isEqualTo(endBlock.longValueExact());
         assertThat(countRows("blocks")).isEqualTo(3);
@@ -144,8 +145,6 @@ class BlockJdbcRepositoryIntegrationTest {
 
         assertThat(restartRun.resumeFromBlock()).isEqualTo(endBlock.add(BigInteger.ONE));
         assertThat(restartRun.skippedBlocks()).isEqualTo(3);
-        assertThat(restartRun.processedBlocks()).isZero();
-        assertThat(restartRun.transactionsInserted()).isZero();
         assertThat(countRows("blocks")).isEqualTo(3);
         assertThat(countRows("transactions")).isEqualTo(6);
         verifyNoInteractions(rpcAdapter);

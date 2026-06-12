@@ -7,6 +7,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
@@ -18,7 +19,9 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 @Service
 public class EthereumRpcAdapter {
@@ -26,10 +29,16 @@ public class EthereumRpcAdapter {
     private static final Logger logger = LoggerFactory.getLogger(EthereumRpcAdapter.class);
     private final Web3j web3j;
     private final CircuitBreaker ethereumRpcCircuitBreaker;
+    private final Executor receiptFetchExecutor;
 
-    public EthereumRpcAdapter(Web3j web3j, CircuitBreakerRegistry circuitBreakerRegistry) {
+    public EthereumRpcAdapter(
+            Web3j web3j,
+            CircuitBreakerRegistry circuitBreakerRegistry,
+            @Qualifier("receiptFetchExecutor") Executor receiptFetchExecutor
+    ) {
         this.web3j = web3j;
         this.ethereumRpcCircuitBreaker = circuitBreakerRegistry.circuitBreaker("ethereumRpc");
+        this.receiptFetchExecutor = receiptFetchExecutor;
     }
 
     public BlockData fetchBlock(BigInteger blockNumber) {
@@ -57,11 +66,30 @@ public class EthereumRpcAdapter {
     }
 
     private BlockData mapToBlockData(EthBlock.Block ethBlock) {
-        // Map transactions
-        List<TransactionData> transactions = ethBlock.getTransactions().stream()
+        List<EthBlock.TransactionObject> transactionObjects = ethBlock.getTransactions().stream()
                 .map(txResult -> (EthBlock.TransactionObject) txResult)
-                .map(this::mapToTransactionData)
-                .collect(Collectors.toList());
+                .toList();
+
+        // Fetch receipts concurrently on the dedicated receipt pool instead of
+        // one-by-one: a 200-tx block goes from 200 sequential RPC round trips
+        // to bounded parallel fetches. The receipt pool is separate from the
+        // block extraction pool to avoid nested-task starvation.
+        List<CompletableFuture<TransactionData>> futures = transactionObjects.stream()
+                .map(tx -> CompletableFuture.supplyAsync(() -> mapToTransactionData(tx), receiptFetchExecutor))
+                .toList();
+
+        List<TransactionData> transactions;
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            transactions = futures.stream().map(CompletableFuture::join).toList();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RpcFetchException rpcFetchException) {
+                throw rpcFetchException;
+            }
+            throw new RpcFetchException(
+                    "Failed to fetch transaction receipts for block " + ethBlock.getNumber(), cause);
+        }
 
         return new BlockData(
                 ethBlock.getNumber(),

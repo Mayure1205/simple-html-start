@@ -62,6 +62,7 @@ class BlockIngestionServiceTest {
                 repository,
                 transactionTemplate,
                 Runnable::run,
+                Runnable::run,
                 ingestionLockService,
                 ETHEREUM_CHAIN_ID,
                 MAX_RANGE_SIZE
@@ -126,9 +127,7 @@ class BlockIngestionServiceTest {
         assertThat(response.chainId()).isEqualTo(ETHEREUM_CHAIN_ID);
         assertThat(response.resumeFromBlock()).isEqualTo(startBlock);
         assertThat(response.skippedBlocks()).isZero();
-        assertThat(response.processedBlocks()).isEqualTo(2);
-        assertThat(response.transactionsInserted()).isEqualTo(4);
-        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(response.status()).isEqualTo("RUNNING");
 
         verify(repository).markJobCompleted(42L);
         verify(ingestionLockService).releaseRangeLock(ETHEREUM_CHAIN_ID, "lock-token");
@@ -162,8 +161,6 @@ class BlockIngestionServiceTest {
 
         assertThat(response.resumeFromBlock()).isEqualTo(resumeBlock);
         assertThat(response.skippedBlocks()).isEqualTo(1);
-        assertThat(response.processedBlocks()).isEqualTo(2);
-        assertThat(response.transactionsInserted()).isEqualTo(4);
 
         verify(rpcAdapter, never()).fetchBlock(skippedBlock);
         verify(rpcAdapter).fetchBlock(resumeBlock);
@@ -199,8 +196,7 @@ class BlockIngestionServiceTest {
                 endBlock
         ));
 
-        assertThat(response.processedBlocks()).isEqualTo(3);
-        assertThat(response.transactionsInserted()).isEqualTo(6);
+        assertThat(response.status()).isEqualTo("RUNNING");
 
         verify(repository).updateCheckpoint(ETHEREUM_CHAIN_ID, startBlock);
         verify(repository).updateCheckpoint(ETHEREUM_CHAIN_ID, middleBlock);
@@ -235,7 +231,7 @@ class BlockIngestionServiceTest {
 
         IngestionJobResponse response = service.ingestRange(request);
 
-        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(response.status()).isEqualTo("RUNNING");
         assertThat(overlappingFailure.get())
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Ingestion job starting is already running for chainId 1");
@@ -303,12 +299,16 @@ class BlockIngestionServiceTest {
         when(repository.createJob(ETHEREUM_CHAIN_ID, failedBlock, failedBlock)).thenReturn(44L);
         when(rpcAdapter.fetchBlock(failedBlock)).thenThrow(failure);
 
-        assertThatThrownBy(() -> service.ingestRange(new StartIngestionRequest(
+        // The job is async now: ingestRange accepts the job and the failure is
+        // recorded by the coordinator instead of propagating to the caller.
+        IngestionJobResponse response = service.ingestRange(new StartIngestionRequest(
                 ETHEREUM_CHAIN_ID,
                 failedBlock,
                 failedBlock
-        )))
-                .isSameAs(failure);
+        ));
+
+        assertThat(response.jobId()).isEqualTo(44L);
+        assertThat(response.status()).isEqualTo("RUNNING");
 
         verify(repository).recordFailedBlock(ETHEREUM_CHAIN_ID, failedBlock, "RPC timeout");
         verify(repository).markJobFailed(44L, "RPC timeout");

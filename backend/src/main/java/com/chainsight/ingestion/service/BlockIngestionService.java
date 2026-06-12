@@ -40,6 +40,7 @@ public class BlockIngestionService {
     private final long ethereumChainId;
     private final int maxRangeSize;
     private final Executor blockExtractionExecutor;
+    private final Executor jobCoordinatorExecutor;
     private final RedisIngestionLockService ingestionLockService;
     private final ConcurrentHashMap<Long, Long> activeRangeJobsByChain = new ConcurrentHashMap<>();
 
@@ -48,6 +49,7 @@ public class BlockIngestionService {
             BlockJdbcRepository repository,
             TransactionTemplate transactionTemplate,
             @Qualifier("blockExtractionExecutor") Executor blockExtractionExecutor,
+            @Qualifier("jobCoordinatorExecutor") Executor jobCoordinatorExecutor,
             RedisIngestionLockService ingestionLockService,
             @Value("${ethereum.chain-id}") long ethereumChainId,
             @Value("${ethereum.ingestion.max-range-size}") int maxRangeSize
@@ -56,6 +58,7 @@ public class BlockIngestionService {
         this.repository = repository;
         this.transactionTemplate = transactionTemplate;
         this.blockExtractionExecutor = blockExtractionExecutor;
+        this.jobCoordinatorExecutor = jobCoordinatorExecutor;
         this.ingestionLockService = ingestionLockService;
         this.ethereumChainId = ethereumChainId;
         this.maxRangeSize = maxRangeSize;
@@ -81,13 +84,19 @@ public class BlockIngestionService {
         return result;
     }
 
+    /**
+     * Accepts a range ingestion job and returns immediately with status RUNNING.
+     * The range is processed asynchronously on the job-coordinator pool; block
+     * fetches run in parallel on the extraction pool while persistence stays
+     * sequential in block order, each block in its own ACID transaction.
+     * Progress is queryable via the job status endpoint. The Redis lock and the
+     * in-memory job slot are released when the async job finishes.
+     */
     public IngestionJobResponse ingestRange(StartIngestionRequest request) {
         validateRequest(request);
         acquireRangeJobSlot(request.chainId());
 
         long jobId = 0;
-        long processedBlocks = 0;
-        long insertedTransactions = 0;
         String distributedLockToken = null;
 
         try {
@@ -102,6 +111,50 @@ public class BlockIngestionService {
             long lastProcessedBlock = repository.getLastProcessedBlock(request.chainId());
             BigInteger resumeFromBlock = nextBlockToProcess(request.startBlock(), lastProcessedBlock);
             long skippedBlocks = skippedBlockCount(request.startBlock(), resumeFromBlock);
+
+            final long submittedJobId = jobId;
+            final String lockToken = distributedLockToken;
+            CompletableFuture
+                    .runAsync(() -> runRangeJob(submittedJobId, request, resumeFromBlock), jobCoordinatorExecutor)
+                    .whenComplete((unused, ex) -> {
+                        ingestionLockService.releaseRangeLock(request.chainId(), lockToken);
+                        releaseRangeJobSlot(request.chainId(), submittedJobId);
+                    });
+
+            logger.info(
+                    "Accepted range job {} for chain {}: blocks {} to {} (resuming from {})",
+                    jobId, request.chainId(), request.startBlock(), request.endBlock(), resumeFromBlock
+            );
+
+            return new IngestionJobResponse(
+                    jobId,
+                    request.chainId(),
+                    request.startBlock(),
+                    request.endBlock(),
+                    resumeFromBlock,
+                    skippedBlocks,
+                    0,
+                    0,
+                    0,
+                    "RUNNING"
+            );
+        } catch (RuntimeException ex) {
+            if (jobId > 0) {
+                repository.markJobFailed(jobId, ex.getMessage());
+            }
+            if (distributedLockToken != null) {
+                ingestionLockService.releaseRangeLock(request.chainId(), distributedLockToken);
+            }
+            releaseRangeJobSlot(request.chainId(), jobId);
+            throw ex;
+        }
+    }
+
+    private void runRangeJob(long jobId, StartIngestionRequest request, BigInteger resumeFromBlock) {
+        long processedBlocks = 0;
+        long insertedTransactions = 0;
+
+        try {
             List<BlockExtractionTask> extractionTasks = scheduleBlockExtraction(resumeFromBlock, request.endBlock());
             for (BlockExtractionTask extractionTask : extractionTasks) {
                 try {
@@ -117,28 +170,16 @@ public class BlockIngestionService {
             }
 
             repository.markJobCompleted(jobId);
-            return new IngestionJobResponse(
-                    jobId,
-                    request.chainId(),
-                    request.startBlock(),
-                    request.endBlock(),
-                    resumeFromBlock,
-                    skippedBlocks,
-                    processedBlocks,
-                    insertedTransactions,
-                    0,
-                    "COMPLETED"
+            logger.info(
+                    "Range job {} completed: {} blocks processed, {} transactions inserted",
+                    jobId, processedBlocks, insertedTransactions
             );
         } catch (RuntimeException ex) {
-            if (jobId > 0) {
-                repository.markJobFailed(jobId, ex.getMessage());
-            }
-            throw ex;
-        } finally {
-            if (distributedLockToken != null) {
-                ingestionLockService.releaseRangeLock(request.chainId(), distributedLockToken);
-            }
-            releaseRangeJobSlot(request.chainId(), jobId);
+            repository.markJobFailed(jobId, ex.getMessage());
+            logger.error(
+                    "Range job {} failed after {} blocks: {}",
+                    jobId, processedBlocks, ex.getMessage(), ex
+            );
         }
     }
 
