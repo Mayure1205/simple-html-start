@@ -153,7 +153,7 @@ Retries one failed block immediately. On success, the failed-block row is marked
 
 ### `GET /api/v1/analytics/network/daily?chainId=1&from=2026-06-01&to=2026-06-12`
 
-Returns daily transaction and value metrics.
+Returns daily transaction and value metrics from indexed blocks and transactions. The implemented query also returns window-function fields for previous-day transaction count, day-over-day delta, and transaction-count rank.
 
 Response:
 
@@ -168,7 +168,11 @@ Response:
       "blockCount": 7200,
       "transactionCount": 1180000,
       "totalValueWei": "123450000000000000000000",
-      "averageGasPriceWei": "32000000000"
+      "averageGasPriceWei": "32000000000",
+      "averageGasUsed": 21000.00,
+      "previousDayTransactionCount": 1100000,
+      "transactionCountDelta": 80000,
+      "transactionCountRank": 1
     }
   ]
 }
@@ -176,7 +180,32 @@ Response:
 
 ### `GET /api/v1/analytics/network/largest-transactions?chainId=1&from=2026-06-01&to=2026-06-12&limit=50`
 
-Returns largest indexed native transfers.
+Returns largest indexed native transfers ranked by `value_wei`. The implemented query uses `RANK()`.
+
+Response:
+
+```json
+{
+  "chainId": 1,
+  "from": "2026-06-01",
+  "to": "2026-06-12",
+  "limit": 50,
+  "transactions": [
+    {
+      "valueRank": 1,
+      "transactionHash": "0xabc",
+      "blockNumber": 22000000,
+      "fromAddress": "0xaaa",
+      "toAddress": "0xbbb",
+      "valueWei": "1000000000000000000",
+      "gasPriceWei": "32000000000",
+      "gasUsed": 21000,
+      "status": 1,
+      "blockTimestamp": "2026-06-12T10:00:00Z"
+    }
+  ]
+}
+```
 
 ## Wallet Analytics
 

@@ -108,6 +108,7 @@ class BlockJdbcRepositoryIntegrationTest {
                 rpcAdapter,
                 repository,
                 transactionTemplate,
+                Runnable::run,
                 ETHEREUM_CHAIN_ID,
                 100
         );

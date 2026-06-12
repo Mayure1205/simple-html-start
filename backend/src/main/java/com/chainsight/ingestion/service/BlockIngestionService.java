@@ -11,15 +11,20 @@ import com.chainsight.ingestion.model.TransactionData;
 import com.chainsight.ingestion.repository.BlockJdbcRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -33,18 +38,21 @@ public class BlockIngestionService {
     private final TransactionTemplate transactionTemplate;
     private final long ethereumChainId;
     private final int maxRangeSize;
+    private final Executor blockExtractionExecutor;
     private final ConcurrentHashMap<Long, Long> activeRangeJobsByChain = new ConcurrentHashMap<>();
 
     public BlockIngestionService(
             EthereumRpcAdapter rpcAdapter,
             BlockJdbcRepository repository,
             TransactionTemplate transactionTemplate,
+            @Qualifier("blockExtractionExecutor") Executor blockExtractionExecutor,
             @Value("${ethereum.chain-id}") long ethereumChainId,
             @Value("${ethereum.ingestion.max-range-size}") int maxRangeSize
     ) {
         this.rpcAdapter = rpcAdapter;
         this.repository = repository;
         this.transactionTemplate = transactionTemplate;
+        this.blockExtractionExecutor = blockExtractionExecutor;
         this.ethereumChainId = ethereumChainId;
         this.maxRangeSize = maxRangeSize;
     }
@@ -84,17 +92,18 @@ public class BlockIngestionService {
             long lastProcessedBlock = repository.getLastProcessedBlock(request.chainId());
             BigInteger resumeFromBlock = nextBlockToProcess(request.startBlock(), lastProcessedBlock);
             long skippedBlocks = skippedBlockCount(request.startBlock(), resumeFromBlock);
-            BigInteger currentBlock = resumeFromBlock;
-            while (currentBlock.compareTo(request.endBlock()) <= 0) {
+            List<BlockExtractionTask> extractionTasks = scheduleBlockExtraction(resumeFromBlock, request.endBlock());
+            for (BlockExtractionTask extractionTask : extractionTasks) {
                 try {
-                    IngestionResult result = ingestBlock(currentBlock);
+                    BlockData blockData = extractionTask.future().join();
+                    IngestionResult result = persistFetchedBlock(blockData);
                     processedBlocks++;
                     insertedTransactions += result.transactionsInserted();
                 } catch (RuntimeException ex) {
-                    repository.recordFailedBlock(request.chainId(), currentBlock, ex.getMessage());
-                    throw ex;
+                    RuntimeException failure = unwrapCompletionException(ex);
+                    repository.recordFailedBlock(request.chainId(), extractionTask.blockNumber(), failure.getMessage());
+                    throw failure;
                 }
-                currentBlock = currentBlock.add(BigInteger.ONE);
             }
 
             repository.markJobCompleted(jobId);
@@ -148,6 +157,36 @@ public class BlockIngestionService {
             repository.recordFailedBlock(chainId, blockNumber, ex.getMessage());
             throw ex;
         }
+    }
+
+    private List<BlockExtractionTask> scheduleBlockExtraction(BigInteger startBlock, BigInteger endBlock) {
+        List<BlockExtractionTask> tasks = new ArrayList<>();
+        BigInteger currentBlock = startBlock;
+        while (currentBlock.compareTo(endBlock) <= 0) {
+            BigInteger blockToFetch = currentBlock;
+            CompletableFuture<BlockData> future = CompletableFuture.supplyAsync(
+                    () -> rpcAdapter.fetchBlock(blockToFetch),
+                    blockExtractionExecutor
+            );
+            tasks.add(new BlockExtractionTask(blockToFetch, future));
+            currentBlock = currentBlock.add(BigInteger.ONE);
+        }
+        return tasks;
+    }
+
+    private IngestionResult persistFetchedBlock(BlockData blockData) {
+        IngestionResult result = transactionTemplate.execute(status -> persistBlock(blockData, ethereumChainId));
+        if (result == null) {
+            throw new IllegalStateException("Block ingestion transaction did not return a result");
+        }
+        return result;
+    }
+
+    private RuntimeException unwrapCompletionException(RuntimeException ex) {
+        if (ex instanceof CompletionException && ex.getCause() instanceof RuntimeException runtimeException) {
+            return runtimeException;
+        }
+        return ex;
     }
 
     private BigInteger nextBlockToProcess(BigInteger requestedStartBlock, long lastProcessedBlock) {
@@ -257,5 +296,11 @@ public class BlockIngestionService {
         if (!Set.of("PENDING", "RETRYING", "SUCCESS", "DEAD").contains(status)) {
             throw new IllegalArgumentException("Invalid failed block status: " + status);
         }
+    }
+
+    private record BlockExtractionTask(
+            BigInteger blockNumber,
+            CompletableFuture<BlockData> future
+    ) {
     }
 }

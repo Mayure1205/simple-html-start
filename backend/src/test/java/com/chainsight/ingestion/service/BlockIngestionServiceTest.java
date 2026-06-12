@@ -17,6 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,6 +56,7 @@ class BlockIngestionServiceTest {
                 rpcAdapter,
                 repository,
                 transactionTemplate,
+                Runnable::run,
                 ETHEREUM_CHAIN_ID,
                 MAX_RANGE_SIZE
         );
@@ -158,6 +160,42 @@ class BlockIngestionServiceTest {
         verify(rpcAdapter).fetchBlock(resumeBlock);
         verify(rpcAdapter).fetchBlock(endBlock);
         verify(repository).markJobCompleted(43L);
+    }
+
+    @Test
+    void ingestRangeSchedulesAllBlockFetchesBeforePersistingInOrder() {
+        runTransactionsImmediately();
+
+        BigInteger startBlock = BigInteger.valueOf(22_000_001L);
+        BigInteger middleBlock = BigInteger.valueOf(22_000_002L);
+        BigInteger endBlock = BigInteger.valueOf(22_000_003L);
+        List<BigInteger> fetchedBlocks = new ArrayList<>();
+
+        when(repository.createJob(ETHEREUM_CHAIN_ID, startBlock, endBlock)).thenReturn(46L);
+        when(rpcAdapter.fetchBlock(any())).thenAnswer(invocation -> {
+            BigInteger blockNumber = invocation.getArgument(0);
+            fetchedBlocks.add(blockNumber);
+            return block(blockNumber, Instant.parse("2026-06-12T09:02:00Z"));
+        });
+        when(repository.insertBlock(any(BlockData.class), eq(ETHEREUM_CHAIN_ID))).thenAnswer(invocation -> {
+            assertThat(fetchedBlocks).containsExactly(startBlock, middleBlock, endBlock);
+            return 1;
+        });
+        when(repository.insertTransactions(any(), eq(ETHEREUM_CHAIN_ID), any())).thenReturn(2);
+
+        IngestionJobResponse response = service.ingestRange(new StartIngestionRequest(
+                ETHEREUM_CHAIN_ID,
+                startBlock,
+                endBlock
+        ));
+
+        assertThat(response.processedBlocks()).isEqualTo(3);
+        assertThat(response.transactionsInserted()).isEqualTo(6);
+
+        verify(repository).updateCheckpoint(ETHEREUM_CHAIN_ID, startBlock);
+        verify(repository).updateCheckpoint(ETHEREUM_CHAIN_ID, middleBlock);
+        verify(repository).updateCheckpoint(ETHEREUM_CHAIN_ID, endBlock);
+        verify(repository).markJobCompleted(46L);
     }
 
     @Test

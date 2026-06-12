@@ -12,7 +12,7 @@ ChainSight is a backend data engineering project. It takes Ethereum block data f
 
 Technical interview answer:
 
-ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented backend currently supports Web3j-based block and transaction receipt fetching, checkpoint-aware sequential block-range ingestion, JDBC batch inserts, Flyway-managed PostgreSQL schema, and tests for ingestion behavior.
+ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented backend currently supports Web3j-based block and transaction receipt fetching, bounded concurrent block extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, Flyway-managed PostgreSQL schema, and network analytics APIs using PostgreSQL window functions.
 
 ### 2-Minute Explanation
 
@@ -22,7 +22,7 @@ Ethereum is not the product here. It is the data source. The real engineering pr
 
 Technical interview answer:
 
-The project is a modular Spring Boot backend. The first implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. PostgreSQL unique constraints make replay idempotent, and ingestion checkpoints allow restart behavior to skip already-processed blocks. Each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically.
+The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds a bounded custom `ThreadPoolExecutor` and `CompletableFuture` scheduling so multiple blocks can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions.
 
 ## Architecture Flow
 
@@ -55,13 +55,18 @@ Important implemented files:
 |---|---|
 | App entry point | `backend/src/main/java/com/chainsight/ChainSightApplication.java` |
 | Web3j bean | `backend/src/main/java/com/chainsight/config/Web3jConfig.java` |
+| Ingestion executor bean | `backend/src/main/java/com/chainsight/config/IngestionExecutorConfig.java` |
 | RPC adapter | `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java` |
 | Ingestion service | `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java` |
 | JDBC repository | `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java` |
 | REST API | `backend/src/main/java/com/chainsight/ingestion/controller/IngestionController.java` |
+| Network analytics API | `backend/src/main/java/com/chainsight/analytics/controller/NetworkAnalyticsController.java` |
+| Network analytics service | `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java` |
+| Network analytics repository | `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java` |
 | Global errors | `backend/src/main/java/com/chainsight/exception/GlobalExceptionHandler.java` |
 | Schema | `backend/src/main/resources/db/migration/V1__init_schema.sql` |
 | Unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java` |
+| Analytics unit tests | `backend/src/test/java/com/chainsight/analytics/service/NetworkAnalyticsServiceTest.java` |
 | PostgreSQL integration tests | `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java` |
 
 ## Sprint-Wise Implementation Summary
@@ -239,6 +244,131 @@ Evidence:
 - Integration tests added: `BlockJdbcRepositoryIntegrationTest.java`.
 - In this Codex run, Testcontainers tests were skipped because Docker was not running.
 
+### Sprint 3 - Bounded Concurrent Extraction
+
+Status:
+
+- Implemented in code.
+- Unit tests added but not run in this turn because we are avoiding heavier commands.
+
+What was built:
+
+- A custom bounded `ThreadPoolExecutor` bean for block extraction.
+- Configurable executor settings in `application.yml`.
+- A `CompletableFuture` pipeline that schedules block RPC fetches concurrently for a range.
+- Ordered persistence after extraction, so checkpoint updates remain simple and restart-safe.
+- Executor lifecycle cleanup through Spring bean destroy method.
+- Startup validation for invalid executor settings.
+
+Why it was needed:
+
+- Fetching blocks and receipts from RPC is I/O-bound. While one RPC call is waiting on the network, other block fetches can make progress. This improves the ingestion architecture without making database checkpointing unsafe.
+
+Where it is used:
+
+- Executor config: `backend/src/main/java/com/chainsight/config/IngestionExecutorConfig.java`
+- Executor properties: `backend/src/main/resources/application.yml`
+- CompletableFuture scheduling: `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`
+- Unit proof: `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java`
+
+Java/Spring concepts:
+
+- `ThreadPoolExecutor`.
+- Bounded `LinkedBlockingQueue`.
+- Custom thread naming.
+- `CallerRunsPolicy` backpressure.
+- `CompletableFuture.supplyAsync`.
+- Spring `@Bean` and `@Qualifier`.
+- Spring bean lifecycle destroy method.
+
+Beginner-friendly explanation:
+
+Before Sprint 3, ChainSight fetched one block, saved it, then fetched the next block. Now it can ask the RPC provider for multiple blocks in parallel, but it still saves them in order. This gives better throughput while keeping recovery logic easy to reason about.
+
+Technical interview answer:
+
+Range ingestion creates one `CompletableFuture<BlockData>` per block using a named `blockExtractionExecutor`. The executor has bounded threads and bounded queue capacity to avoid unbounded memory growth. After scheduling the extraction futures, the service joins them in block-number order and persists each block in its own transaction. This keeps checkpoint advancement ordered while allowing network-bound RPC extraction to overlap.
+
+The executor bean also uses `destroyMethod = "shutdown"` so Spring shuts down worker threads when the application context closes. Invalid pool settings fail fast at startup.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Why not write blocks concurrently too? | Ordered writes keep checkpoint recovery simpler for the MVP. |
+| Why a bounded executor? | It prevents too many RPC tasks from consuming memory or overwhelming the provider. |
+| What does `CallerRunsPolicy` do? | If the pool and queue are full, the caller thread runs the task, creating natural backpressure. |
+| Where is `CompletableFuture` used? | `BlockIngestionService.scheduleBlockExtraction(...)` uses `supplyAsync`. |
+| How are worker threads cleaned up? | The executor bean declares `destroyMethod = "shutdown"`. |
+
+Evidence:
+
+- Code: `IngestionExecutorConfig.java`.
+- Code: `BlockIngestionService.scheduleBlockExtraction(...)`.
+- Test added: `BlockIngestionServiceTest.ingestRangeSchedulesAllBlockFetchesBeforePersistingInOrder`.
+
+### Sprint 4 - Network Analytics APIs
+
+Status:
+
+- Implemented in code.
+- Service tests added but not run in this turn because we are avoiding heavier commands.
+- `EXPLAIN ANALYZE` benchmarks are not done yet.
+
+What was built:
+
+- `GET /api/v1/analytics/network/daily`
+- `GET /api/v1/analytics/network/largest-transactions`
+- SQL repository for daily network metrics.
+- SQL repository for ranked largest native transactions.
+- Window functions with `LAG()` and `RANK()`.
+- API DTOs that return Wei values as strings to avoid JavaScript precision problems.
+
+Why it was needed:
+
+- Ingestion alone stores data, but analytics APIs prove the warehouse can answer useful questions. Sprint 4 starts with network-level analytics because it can be built directly from the indexed `blocks` and `transactions` tables.
+
+Where it is used:
+
+- Controller: `backend/src/main/java/com/chainsight/analytics/controller/NetworkAnalyticsController.java`
+- Service: `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java`
+- Repository: `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java`
+- DTOs: `backend/src/main/java/com/chainsight/analytics/dto`
+- Tests: `backend/src/test/java/com/chainsight/analytics/service/NetworkAnalyticsServiceTest.java`
+- API docs: `docs/api-contract.md`
+
+Java/Spring/PostgreSQL concepts:
+
+- Spring `@RestController`, `@Service`, and `@Repository`.
+- `JdbcTemplate` analytical reads.
+- `LocalDate` query parameters.
+- `RANK()` for largest transaction ranking.
+- `LAG()` for previous-day comparison.
+- B-tree indexes on timestamp and value query paths.
+
+Beginner-friendly explanation:
+
+The ingestion pipeline fills the warehouse. The analytics endpoints read from that warehouse and answer questions like “how many transactions happened per day?” and “which transactions moved the most Wei?”
+
+Technical interview answer:
+
+Network analytics are implemented as SQL-first repository methods using `JdbcTemplate`. The daily endpoint groups indexed blocks and transactions by date, then uses `LAG()` to compare each day with the previous day and `RANK()` to rank days by transaction count. The largest-transactions endpoint ranks transactions by `value_wei` using `RANK()`. Large blockchain numeric values are returned as strings in the API response.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Why use SQL for analytics instead of Java loops? | PostgreSQL is optimized for aggregation, filtering, sorting, indexes, and window functions. |
+| Where are window functions used? | `NetworkAnalyticsRepository.findDailyMetrics(...)` and `findLargestTransactions(...)`. |
+| Why return Wei as strings? | JavaScript cannot safely represent very large integers as normal numbers. |
+| Are analytics benchmarks complete? | Not yet. `EXPLAIN ANALYZE` evidence is planned before claiming measured performance. |
+
+Evidence:
+
+- Code: `NetworkAnalyticsRepository.java`.
+- API contract: `docs/api-contract.md`.
+- Test added: `NetworkAnalyticsServiceTest.java`.
+
 ## Core Java Concepts Used
 
 | Concept | Where Used | Explanation |
@@ -250,6 +380,10 @@ Evidence:
 | Exception handling | `RpcFetchException`, `GlobalExceptionHandler` | Converts RPC and validation failures into API errors. |
 | Collections | `List<TransactionData>`, `Set<String>` | Stores transactions and unique wallet addresses. |
 | `ConcurrentHashMap` | `BlockIngestionService.activeRangeJobsByChain` | Prevents overlapping same-chain range ingestion jobs in one JVM. |
+| `ThreadPoolExecutor` | `IngestionExecutorConfig.blockExtractionExecutor(...)` | Runs bounded block extraction workers. |
+| `CompletableFuture` | `BlockIngestionService.scheduleBlockExtraction(...)` | Schedules RPC fetches concurrently. |
+| `LocalDate` | `NetworkAnalyticsController` | Accepts date-range query parameters for analytics. |
+| `BigDecimal` | Analytics DTOs and repository mapping | Represents SQL numeric analytics values safely. |
 
 ## Spring Boot Concepts Used
 
@@ -263,6 +397,10 @@ Evidence:
 | `TransactionTemplate` | `BlockIngestionService` | Defines explicit per-block transaction boundaries. |
 | Validation | `StartIngestionRequest` | Rejects invalid API input. |
 | Global exception handling | `GlobalExceptionHandler` | Returns consistent API error responses. |
+| `@Bean` | `IngestionExecutorConfig` | Registers the custom executor in the Spring container. |
+| `@Qualifier` | `BlockIngestionService` constructor | Injects the named block extraction executor. |
+| `@RestController` for analytics | `NetworkAnalyticsController` | Exposes network analytics endpoints. |
+| `@DateTimeFormat` | `NetworkAnalyticsController` | Parses ISO date request parameters. |
 
 ## PostgreSQL And SQL Concepts Used
 
@@ -274,12 +412,15 @@ Implemented:
 - `ON CONFLICT DO NOTHING` for safe replay.
 - Checkpoint table for restart progress.
 - B-tree indexes for likely wallet/time/block queries.
+- SQL aggregation for daily network metrics.
+- Window functions with `LAG()` and `RANK()`.
 - Transaction rollback behavior tested in Testcontainers test code.
 
 Important files:
 
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`
 - `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java`
+- `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java`
 - `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java`
 
 ## Concurrency Concepts Used
@@ -287,10 +428,12 @@ Important files:
 Implemented now:
 
 - `ConcurrentHashMap` guard for active range ingestion jobs in one backend JVM.
+- Bounded custom `ThreadPoolExecutor` for block extraction.
+- `CompletableFuture.supplyAsync` pipeline for range RPC fetch scheduling.
 
 Important:
 
-Do not claim custom thread pools, `CompletableFuture`, distributed locking, or concurrent extraction yet.
+Do not claim distributed locking or concurrent database writes yet.
 
 ## Redis, Resilience, Docker, AWS, And CI/CD Concepts Used
 
@@ -369,6 +512,21 @@ Evidence:
 - `BlockIngestionService.activeRangeJobsByChain`
 - `BlockIngestionServiceTest.ingestRangeRejectsOverlappingRangeForSameChain`
 
+### Parallel Extract, Ordered Load
+
+Beginner-friendly:
+
+The app can fetch several blocks at the same time, but it saves them one-by-one in order.
+
+Technical answer:
+
+This is an ETL trade-off. Extraction is parallelized because RPC calls are I/O-bound. Loading is ordered because checkpoint correctness is easier when block `N` is committed before block `N + 1`.
+
+Evidence:
+
+- `BlockIngestionService.scheduleBlockExtraction(...)`
+- `BlockIngestionService.persistFetchedBlock(...)`
+
 ## Failure Scenarios Handled
 
 | Scenario | Current Handling | Evidence |
@@ -377,6 +535,11 @@ Evidence:
 | Start block greater than end block | Rejects request | `BlockIngestionService.validateRequest(...)` |
 | Range too large | Rejects request based on config | `BlockIngestionServiceTest` |
 | Overlapping same-chain range request in one JVM | Rejects request before creating a second job | `BlockIngestionService.activeRangeJobsByChain` |
+| Executor queue saturation | Uses `CallerRunsPolicy` backpressure | `IngestionExecutorConfig` |
+| Invalid executor configuration | Fails startup with `IllegalArgumentException` | `IngestionExecutorConfig.validateExecutorSettings(...)` |
+| Unsupported analytics chain ID | Rejects request | `NetworkAnalyticsServiceTest` |
+| Invalid analytics date range | Rejects request | `NetworkAnalyticsServiceTest` |
+| Analytics limit too large | Rejects request | `NetworkAnalyticsServiceTest` |
 | RPC block missing | Throws `RpcFetchException` | `EthereumRpcAdapter` |
 | RPC receipt fetch fails | Throws `RpcFetchException` and stops the block ingestion | `EthereumRpcAdapter.fetchTransactionReceipt(...)` |
 | Block fails during range ingestion | Records row in `failed_blocks` and marks job failed | `BlockIngestionService`, `BlockJdbcRepository` |
@@ -395,15 +558,20 @@ Evidence:
 | What makes ingestion restart-safe? | Block data and checkpoint update happen in one transaction, and the next run reads the checkpoint. |
 | How do you avoid duplicates? | Unique constraints plus `ON CONFLICT DO NOTHING`. |
 | Is the current overlap guard distributed? | No. It protects one JVM. Redis `SETNX` is planned for multi-instance deployment. |
+| What is the Sprint 3 concurrency model? | Parallel RPC extraction with ordered database persistence. |
+| What analytics are implemented? | Network daily metrics and largest native transactions. |
+| Which SQL window functions are used? | `LAG()` for previous-day comparison and `RANK()` for rankings. |
 | Why not JPA for transaction rows? | JPA is useful for metadata, but batch ETL inserts need direct SQL control. |
 | What extra value do receipts add? | They add execution status and actual gas used, which makes the warehouse useful for gas and failure analytics later. |
 | What is proven today? | Service resume behavior and validation are unit-tested. PostgreSQL integration tests are written but need Docker running to execute. |
-| What is not implemented yet? | Concurrency, Redis caching/locks, circuit breaker wrapping, analytics APIs, dashboard, AWS, CI/CD. |
+| What is not implemented yet? | Redis caching/locks, circuit breaker wrapping, wallet/token analytics, dashboard, AWS, CI/CD. |
 
 ## Honest Limitations
 
-- Ingestion is sequential, not concurrent yet.
+- RPC extraction is concurrent, but database persistence is still ordered and not parallel.
 - The active job guard is in-memory only, so it does not protect multiple backend instances yet.
+- Analytics currently covers network-level views only.
+- `EXPLAIN ANALYZE` benchmarks are not captured yet.
 - Token transfer extraction is not implemented yet.
 - Transaction receipts are fetched sequentially today, so this is correct but not optimized for high-throughput ingestion yet.
 - Redis is configured locally but not used in application logic yet.
@@ -420,8 +588,10 @@ Use this only for the current implemented state:
 ChainSight — Java 21 Historical Data Warehouse Backend
 
 Built a Spring Boot backend foundation for a historical Ethereum data warehouse,
-including Web3j block fetching, checkpoint-aware sequential range ingestion,
+including Web3j block fetching, bounded CompletableFuture-based range extraction,
+checkpoint-aware ordered persistence,
 transaction receipt mapping for status and gas-used fields,
+PostgreSQL window-function network analytics APIs,
 in-memory same-chain job overlap protection,
 Flyway-managed PostgreSQL schema, JdbcTemplate batch inserts, idempotent
 database writes with unique constraints, and unit/Testcontainers tests for
@@ -430,13 +600,12 @@ restart-safety scenarios.
 
 ## Future Topics — Do Not Claim Yet
 
-- Custom `ThreadPoolExecutor` for concurrent extraction.
-- `CompletableFuture` pipeline.
 - Redis cache.
 - Redis distributed ingestion lock.
 - Redis token-bucket rate limiter.
 - Resilience4j circuit breaker around RPC calls.
-- PostgreSQL window-function analytics APIs.
+- Wallet analytics APIs.
+- Token analytics APIs.
 - EXPLAIN ANALYZE benchmark report.
 - Dashboard.
 - GitHub Actions CI.

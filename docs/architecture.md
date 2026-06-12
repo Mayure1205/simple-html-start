@@ -48,7 +48,7 @@ Admin starts block-range job
 Validate chain ID and block range
         |
         v
-Acquire Redis ingestion lock
+Acquire in-memory same-chain job slot
         |
         v
 Split block range into chunks
@@ -86,16 +86,20 @@ If any step fails, the transaction rolls back and the block remains retryable.
 
 ## Concurrency Model
 
-Sprint 3 will introduce a bounded `ThreadPoolExecutor` for block-range extraction.
+Sprint 3 introduced a bounded `ThreadPoolExecutor` for block-range extraction.
 
-The intended design:
+The implemented design:
 
 - Fixed upper bound for worker threads.
 - Bounded queue to prevent unbounded memory growth.
-- `CompletableFuture` for combining independent RPC fetches.
+- `CompletableFuture` for scheduling block fetches concurrently.
 - `ConcurrentHashMap` for active job and progress tracking.
-- Per-chain checkpoint protection with `ReentrantLock`.
+- Ordered persistence after extraction so checkpoints still advance safely.
+
+Planned later:
+
 - Redis lock for cross-instance protection.
+- Per-chain checkpoint protection if multiple concurrent writers are introduced.
 
 ## Persistence Strategy
 
@@ -104,6 +108,15 @@ The intended design:
 - Use PostgreSQL unique constraints for idempotency.
 - Use B-tree indexes for wallet, token, date range, and largest-transfer queries.
 - Use Flyway for schema evolution.
+
+## Analytics Strategy
+
+Sprint 4 begins with network-level analytics over indexed block and transaction data.
+
+- Use `JdbcTemplate` for SQL-first analytical reads.
+- Use PostgreSQL window functions such as `LAG()` and `RANK()`.
+- Keep blockchain-size numeric values as strings in API responses where JavaScript precision matters.
+- Add `EXPLAIN ANALYZE` evidence in the benchmark sprint before claiming measured performance improvements.
 
 ## Resilience Strategy
 
