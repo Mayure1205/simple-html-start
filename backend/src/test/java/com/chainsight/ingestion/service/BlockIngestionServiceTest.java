@@ -8,6 +8,7 @@ import com.chainsight.exception.RpcFetchException;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import com.chainsight.ingestion.repository.BlockJdbcRepository;
+import com.chainsight.resilience.RedisIngestionLockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -48,6 +50,9 @@ class BlockIngestionServiceTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
+    @Mock
+    private RedisIngestionLockService ingestionLockService;
+
     private BlockIngestionService service;
 
     @BeforeEach
@@ -57,6 +62,7 @@ class BlockIngestionServiceTest {
                 repository,
                 transactionTemplate,
                 Runnable::run,
+                ingestionLockService,
                 ETHEREUM_CHAIN_ID,
                 MAX_RANGE_SIZE
         );
@@ -94,6 +100,7 @@ class BlockIngestionServiceTest {
     @Test
     void ingestRangeCreatesJobAndMarksItCompleted() {
         runTransactionsImmediately();
+        allowRangeLock();
 
         BigInteger startBlock = BigInteger.valueOf(22_000_001L);
         BigInteger endBlock = BigInteger.valueOf(22_000_002L);
@@ -124,11 +131,13 @@ class BlockIngestionServiceTest {
         assertThat(response.status()).isEqualTo("COMPLETED");
 
         verify(repository).markJobCompleted(42L);
+        verify(ingestionLockService).releaseRangeLock(ETHEREUM_CHAIN_ID, "lock-token");
     }
 
     @Test
     void ingestRangeResumesFromCheckpointAndSkipsCommittedBlocks() {
         runTransactionsImmediately();
+        allowRangeLock();
 
         BigInteger startBlock = BigInteger.valueOf(22_000_001L);
         BigInteger skippedBlock = startBlock;
@@ -165,6 +174,7 @@ class BlockIngestionServiceTest {
     @Test
     void ingestRangeSchedulesAllBlockFetchesBeforePersistingInOrder() {
         runTransactionsImmediately();
+        allowRangeLock();
 
         BigInteger startBlock = BigInteger.valueOf(22_000_001L);
         BigInteger middleBlock = BigInteger.valueOf(22_000_002L);
@@ -201,6 +211,7 @@ class BlockIngestionServiceTest {
     @Test
     void ingestRangeRejectsOverlappingRangeForSameChain() {
         runTransactionsImmediately();
+        allowRangeLock();
 
         BigInteger blockNumber = BigInteger.valueOf(22_000_006L);
         StartIngestionRequest request = new StartIngestionRequest(
@@ -231,6 +242,25 @@ class BlockIngestionServiceTest {
 
         verify(repository, times(1)).createJob(ETHEREUM_CHAIN_ID, blockNumber, blockNumber);
         verify(repository).markJobCompleted(45L);
+    }
+
+    @Test
+    void ingestRangeRejectsWhenRedisLockIsAlreadyHeld() {
+        BigInteger startBlock = BigInteger.valueOf(22_000_007L);
+        BigInteger endBlock = BigInteger.valueOf(22_000_008L);
+        when(ingestionLockService.acquireRangeLock(ETHEREUM_CHAIN_ID, startBlock, endBlock))
+                .thenThrow(new IllegalArgumentException("Another ingestion job is already running for chainId 1"));
+
+        assertThatThrownBy(() -> service.ingestRange(new StartIngestionRequest(
+                ETHEREUM_CHAIN_ID,
+                startBlock,
+                endBlock
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Another ingestion job is already running for chainId 1");
+
+        verify(repository, never()).createJob(ETHEREUM_CHAIN_ID, startBlock, endBlock);
+        verifyNoInteractions(rpcAdapter);
     }
 
     @Test
@@ -265,6 +295,8 @@ class BlockIngestionServiceTest {
 
     @Test
     void ingestRangeRecordsFailedBlockWhenRpcFetchFails() {
+        allowRangeLock();
+
         BigInteger failedBlock = BigInteger.valueOf(22_000_004L);
         RpcFetchException failure = new RpcFetchException("RPC timeout", new RuntimeException("timeout"));
 
@@ -364,6 +396,10 @@ class BlockIngestionServiceTest {
         when(transactionTemplate.execute(any())).thenAnswer(invocation -> invocation
                 .<org.springframework.transaction.support.TransactionCallback<IngestionResult>>getArgument(0)
                 .doInTransaction(null));
+    }
+
+    private void allowRangeLock() {
+        when(ingestionLockService.acquireRangeLock(anyLong(), any(), any())).thenReturn("lock-token");
     }
 
     private boolean containsExactlyWallets(Set<String> addresses, String... expectedAddresses) {

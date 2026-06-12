@@ -23,9 +23,10 @@ This document tracks verifiable engineering decisions and their implementation w
 | Added B-tree indexes for likely analytics query paths | `backend/src/main/resources/db/migration/V1__init_schema.sql` | `CODED - EXPLAIN ANALYZE TODO` |
 | Added network analytics REST APIs | `backend/src/main/java/com/chainsight/analytics/controller/NetworkAnalyticsController.java`, `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java`, `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java` | `CODED - TESTS ADDED, RUN PENDING` |
 | Used SQL Window functions for analytics | `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java` | `CODED - TESTS ADDED, RUN PENDING` |
-| Wrapped RPC calls in Circuit Breaker (Resilience4j) | | `TODO` |
-| Used Redis distributed lock to prevent overlapping | | `TODO` |
-| Rate-limited APIs via Token Bucket (Redis) | | `TODO` |
+| Cached network analytics responses in Redis | `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsCacheService.java`, `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java` | `CODED - TESTS ADDED, RUN PENDING` |
+| Wrapped RPC calls in Circuit Breaker (Resilience4j) | `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java`, `backend/src/main/resources/application.yml` | `CODED - RUNTIME VERIFY PENDING` |
+| Used Redis distributed lock to prevent overlapping | `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java`, `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java` | `CODED - TESTS ADDED, RUN PENDING` |
+| Rate-limited APIs via Token Bucket (Redis) | `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java`, `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java` | `CODED - TESTS ADDED, RUN PENDING` |
 | Built a comprehensive test suite (Testcontainers) | | `TODO` |
 | Set up GitHub Actions CI pipeline | | `TODO` |
 | Hosted on AWS EC2 via Docker Compose | | `TODO` |

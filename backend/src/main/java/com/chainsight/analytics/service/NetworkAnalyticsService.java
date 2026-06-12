@@ -12,44 +12,66 @@ import java.time.LocalDate;
 public class NetworkAnalyticsService {
 
     private final NetworkAnalyticsRepository repository;
+    private final NetworkAnalyticsCacheService cacheService;
     private final long ethereumChainId;
     private final int maxLimit;
 
     public NetworkAnalyticsService(
             NetworkAnalyticsRepository repository,
+            NetworkAnalyticsCacheService cacheService,
             @Value("${ethereum.chain-id}") long ethereumChainId,
             @Value("${analytics.network.max-limit}") int maxLimit
     ) {
         this.repository = repository;
+        this.cacheService = cacheService;
         this.ethereumChainId = ethereumChainId;
         this.maxLimit = maxLimit;
     }
 
     public NetworkDailyAnalyticsResponse getDailyMetrics(long chainId, LocalDate from, LocalDate to) {
         validateCommonRequest(chainId, from, to);
-        return new NetworkDailyAnalyticsResponse(
+        return cacheService.getDailyMetrics(chainId, from, to)
+                .orElseGet(() -> loadDailyMetrics(chainId, from, to));
+    }
+
+    private NetworkDailyAnalyticsResponse loadDailyMetrics(long chainId, LocalDate from, LocalDate to) {
+        NetworkDailyAnalyticsResponse response = new NetworkDailyAnalyticsResponse(
                 chainId,
                 from,
                 to,
                 repository.findDailyMetrics(chainId, from, to)
         );
+        cacheService.putDailyMetrics(response);
+        return response;
     }
 
     public NetworkLargestTransactionsResponse getLargestTransactions(
             long chainId,
             LocalDate from,
             LocalDate to,
-            int limit
+        int limit
     ) {
         validateCommonRequest(chainId, from, to);
         validateLimit(limit);
-        return new NetworkLargestTransactionsResponse(
+        return cacheService.getLargestTransactions(chainId, from, to, limit)
+                .orElseGet(() -> loadLargestTransactions(chainId, from, to, limit));
+    }
+
+    private NetworkLargestTransactionsResponse loadLargestTransactions(
+            long chainId,
+            LocalDate from,
+            LocalDate to,
+            int limit
+    ) {
+        NetworkLargestTransactionsResponse response = new NetworkLargestTransactionsResponse(
                 chainId,
                 from,
                 to,
                 limit,
                 repository.findLargestTransactions(chainId, from, to, limit)
         );
+        cacheService.putLargestTransactions(response);
+        return response;
     }
 
     private void validateCommonRequest(long chainId, LocalDate from, LocalDate to) {

@@ -122,13 +122,17 @@ Sprint 4 begins with network-level analytics over indexed block and transaction 
 
 External RPC calls are expected to fail or rate-limit occasionally.
 
-The backend will use:
+The backend now uses:
 
 - Resilience4j circuit breaker around RPC calls.
-- Retry with backoff for transient failures.
 - Failed-block table for durable retry state.
-- Redis token bucket rate limiter for RPC and REST protection.
+- Redis token bucket rate limiter for ingestion and analytics REST endpoints.
 - Redis distributed lock to prevent overlapping ingestion ranges.
+- Redis cache for network analytics responses.
+
+Planned later:
+
+- Retry with backoff for transient failures.
 
 ## Observability
 

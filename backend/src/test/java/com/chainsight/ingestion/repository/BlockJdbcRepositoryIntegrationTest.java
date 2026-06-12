@@ -6,6 +6,7 @@ import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import com.chainsight.ingestion.service.BlockIngestionService;
 import com.chainsight.ingestion.service.EthereumRpcAdapter;
+import com.chainsight.resilience.RedisIngestionLockService;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -104,11 +105,13 @@ class BlockJdbcRepositoryIntegrationTest {
     @Test
     void rangeIngestionSkipsAlreadyCheckpointedBlocksOnRestart() {
         EthereumRpcAdapter rpcAdapter = mock(EthereumRpcAdapter.class);
+        RedisIngestionLockService ingestionLockService = mock(RedisIngestionLockService.class);
         BlockIngestionService service = new BlockIngestionService(
                 rpcAdapter,
                 repository,
                 transactionTemplate,
                 Runnable::run,
+                ingestionLockService,
                 ETHEREUM_CHAIN_ID,
                 100
         );
@@ -120,6 +123,8 @@ class BlockJdbcRepositoryIntegrationTest {
         when(rpcAdapter.fetchBlock(startBlock)).thenReturn(block(startBlock));
         when(rpcAdapter.fetchBlock(middleBlock)).thenReturn(block(middleBlock));
         when(rpcAdapter.fetchBlock(endBlock)).thenReturn(block(endBlock));
+        when(ingestionLockService.acquireRangeLock(ETHEREUM_CHAIN_ID, startBlock, endBlock))
+                .thenReturn("lock-token");
 
         StartIngestionRequest request = new StartIngestionRequest(ETHEREUM_CHAIN_ID, startBlock, endBlock);
         IngestionJobResponse firstRun = service.ingestRange(request);

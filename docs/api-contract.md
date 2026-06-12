@@ -9,6 +9,7 @@ This is the planned REST contract for the MVP. Endpoints are versioned under `/a
 - Large integer blockchain values are returned as strings to avoid precision loss in JavaScript.
 - Paginated endpoints accept `page` and `size`.
 - Admin endpoints will be protected in a later security sprint.
+- Ingestion and analytics endpoints are protected by a Redis-backed token bucket rate limiter.
 
 ## Health
 
@@ -253,5 +254,14 @@ All API errors should use this shape:
   "errorCode": "INVALID_REQUEST",
   "message": "startBlock must be less than or equal to endBlock",
   "path": "/api/v1/ingestion/jobs"
+}
+```
+
+Rate-limited response:
+
+```json
+{
+  "errorCode": "RATE_LIMITED",
+  "message": "Too many requests"
 }
 ```

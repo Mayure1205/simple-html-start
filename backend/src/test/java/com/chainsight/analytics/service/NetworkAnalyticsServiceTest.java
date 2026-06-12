@@ -15,11 +15,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,11 +33,14 @@ class NetworkAnalyticsServiceTest {
     @Mock
     private NetworkAnalyticsRepository repository;
 
+    @Mock
+    private NetworkAnalyticsCacheService cacheService;
+
     private NetworkAnalyticsService service;
 
     @BeforeEach
     void setUp() {
-        service = new NetworkAnalyticsService(repository, ETHEREUM_CHAIN_ID, MAX_LIMIT);
+        service = new NetworkAnalyticsService(repository, cacheService, ETHEREUM_CHAIN_ID, MAX_LIMIT);
     }
 
     @Test
@@ -53,6 +58,7 @@ class NetworkAnalyticsServiceTest {
                 80_000,
                 1
         ));
+        when(cacheService.getDailyMetrics(ETHEREUM_CHAIN_ID, from, to)).thenReturn(Optional.empty());
         when(repository.findDailyMetrics(ETHEREUM_CHAIN_ID, from, to)).thenReturn(days);
 
         NetworkDailyAnalyticsResponse response = service.getDailyMetrics(ETHEREUM_CHAIN_ID, from, to);
@@ -62,6 +68,26 @@ class NetworkAnalyticsServiceTest {
         assertThat(response.to()).isEqualTo(to);
         assertThat(response.days()).isEqualTo(days);
         verify(repository).findDailyMetrics(ETHEREUM_CHAIN_ID, from, to);
+        verify(cacheService).putDailyMetrics(response);
+    }
+
+    @Test
+    void getDailyMetricsReturnsCachedDataWithoutRepositoryCall() {
+        LocalDate from = LocalDate.of(2026, 6, 1);
+        LocalDate to = LocalDate.of(2026, 6, 12);
+        NetworkDailyAnalyticsResponse cachedResponse = new NetworkDailyAnalyticsResponse(
+                ETHEREUM_CHAIN_ID,
+                from,
+                to,
+                List.of()
+        );
+        when(cacheService.getDailyMetrics(ETHEREUM_CHAIN_ID, from, to)).thenReturn(Optional.of(cachedResponse));
+
+        NetworkDailyAnalyticsResponse response = service.getDailyMetrics(ETHEREUM_CHAIN_ID, from, to);
+
+        assertThat(response).isEqualTo(cachedResponse);
+        verifyNoInteractions(repository);
+        verify(cacheService, never()).putDailyMetrics(cachedResponse);
     }
 
     @Test
@@ -80,6 +106,7 @@ class NetworkAnalyticsServiceTest {
                 1,
                 Instant.parse("2026-06-12T09:00:00Z")
         ));
+        when(cacheService.getLargestTransactions(ETHEREUM_CHAIN_ID, from, to, 50)).thenReturn(Optional.empty());
         when(repository.findLargestTransactions(ETHEREUM_CHAIN_ID, from, to, 50)).thenReturn(transactions);
 
         NetworkLargestTransactionsResponse response = service.getLargestTransactions(
@@ -92,6 +119,7 @@ class NetworkAnalyticsServiceTest {
         assertThat(response.transactions()).isEqualTo(transactions);
         assertThat(response.limit()).isEqualTo(50);
         verify(repository).findLargestTransactions(ETHEREUM_CHAIN_ID, from, to, 50);
+        verify(cacheService).putLargestTransactions(response);
     }
 
     @Test

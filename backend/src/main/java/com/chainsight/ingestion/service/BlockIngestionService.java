@@ -9,6 +9,7 @@ import com.chainsight.ingestion.dto.StartIngestionRequest;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import com.chainsight.ingestion.repository.BlockJdbcRepository;
+import com.chainsight.resilience.RedisIngestionLockService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -39,6 +40,7 @@ public class BlockIngestionService {
     private final long ethereumChainId;
     private final int maxRangeSize;
     private final Executor blockExtractionExecutor;
+    private final RedisIngestionLockService ingestionLockService;
     private final ConcurrentHashMap<Long, Long> activeRangeJobsByChain = new ConcurrentHashMap<>();
 
     public BlockIngestionService(
@@ -46,6 +48,7 @@ public class BlockIngestionService {
             BlockJdbcRepository repository,
             TransactionTemplate transactionTemplate,
             @Qualifier("blockExtractionExecutor") Executor blockExtractionExecutor,
+            RedisIngestionLockService ingestionLockService,
             @Value("${ethereum.chain-id}") long ethereumChainId,
             @Value("${ethereum.ingestion.max-range-size}") int maxRangeSize
     ) {
@@ -53,6 +56,7 @@ public class BlockIngestionService {
         this.repository = repository;
         this.transactionTemplate = transactionTemplate;
         this.blockExtractionExecutor = blockExtractionExecutor;
+        this.ingestionLockService = ingestionLockService;
         this.ethereumChainId = ethereumChainId;
         this.maxRangeSize = maxRangeSize;
     }
@@ -84,8 +88,14 @@ public class BlockIngestionService {
         long jobId = 0;
         long processedBlocks = 0;
         long insertedTransactions = 0;
+        String distributedLockToken = null;
 
         try {
+            distributedLockToken = ingestionLockService.acquireRangeLock(
+                    request.chainId(),
+                    request.startBlock(),
+                    request.endBlock()
+            );
             jobId = repository.createJob(request.chainId(), request.startBlock(), request.endBlock());
             activeRangeJobsByChain.replace(request.chainId(), 0L, jobId);
 
@@ -125,6 +135,9 @@ public class BlockIngestionService {
             }
             throw ex;
         } finally {
+            if (distributedLockToken != null) {
+                ingestionLockService.releaseRangeLock(request.chainId(), distributedLockToken);
+            }
             releaseRangeJobSlot(request.chainId(), jobId);
         }
     }

@@ -41,6 +41,16 @@ ethereum:
 analytics:
   network:
     max-limit: ${ANALYTICS_NETWORK_MAX_LIMIT:100}
+  cache:
+    ttl-seconds: ${ANALYTICS_CACHE_TTL_SECONDS:300}
+
+resilience:
+  ingestion-lock:
+    ttl-seconds: ${INGESTION_LOCK_TTL_SECONDS:900}
+  rate-limit:
+    capacity: ${API_RATE_LIMIT_CAPACITY:60}
+    refill-tokens-per-second: ${API_RATE_LIMIT_REFILL_TOKENS_PER_SECOND:1}
+    key-ttl-seconds: ${API_RATE_LIMIT_KEY_TTL_SECONDS:120}
 
 management:
   endpoints:

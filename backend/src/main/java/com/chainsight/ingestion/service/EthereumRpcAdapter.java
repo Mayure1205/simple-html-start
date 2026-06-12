@@ -3,6 +3,8 @@ package com.chainsight.ingestion.service;
 import com.chainsight.exception.RpcFetchException;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,12 +25,18 @@ public class EthereumRpcAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(EthereumRpcAdapter.class);
     private final Web3j web3j;
+    private final CircuitBreaker ethereumRpcCircuitBreaker;
 
-    public EthereumRpcAdapter(Web3j web3j) {
+    public EthereumRpcAdapter(Web3j web3j, CircuitBreakerRegistry circuitBreakerRegistry) {
         this.web3j = web3j;
+        this.ethereumRpcCircuitBreaker = circuitBreakerRegistry.circuitBreaker("ethereumRpc");
     }
 
     public BlockData fetchBlock(BigInteger blockNumber) {
+        return ethereumRpcCircuitBreaker.executeSupplier(() -> fetchBlockFromRpc(blockNumber));
+    }
+
+    private BlockData fetchBlockFromRpc(BigInteger blockNumber) {
         try {
             logger.info("Fetching block {}", blockNumber);
             // Fetch block by number with full transaction objects (true)
@@ -83,6 +91,10 @@ public class EthereumRpcAdapter {
     }
 
     private Optional<TransactionReceipt> fetchTransactionReceipt(String transactionHash) {
+        return ethereumRpcCircuitBreaker.executeSupplier(() -> fetchTransactionReceiptFromRpc(transactionHash));
+    }
+
+    private Optional<TransactionReceipt> fetchTransactionReceiptFromRpc(String transactionHash) {
         try {
             return web3j.ethGetTransactionReceipt(transactionHash)
                     .send()
