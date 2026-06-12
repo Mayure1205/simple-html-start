@@ -1,15 +1,13 @@
 package com.chainsight.ingestion.dto;
 
-import lombok.Builder;
-import lombok.Data;
-
 import java.math.BigInteger;
 
-@Data
-@Builder
-public class IngestionResult {
-    private BigInteger blockNumber;
-    private int transactionsInserted;
-    private boolean checkpointUpdated;
-    private String status;
+public record IngestionResult(
+        BigInteger blockNumber,
+        int blocksInserted,
+        int transactionsSeen,
+        int transactionsInserted,
+        boolean checkpointUpdated,
+        String status
+) {
 }

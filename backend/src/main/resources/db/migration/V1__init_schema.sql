@@ -19,7 +19,7 @@ CREATE TABLE blocks (
     block_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     base_fee_per_gas_wei NUMERIC(78, 0),
     gas_used BIGINT,
-    gas_limit BIGINT,
+    gas_limit NUMERIC(78, 0),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (chain_id, block_number),
     UNIQUE (chain_id, block_hash)

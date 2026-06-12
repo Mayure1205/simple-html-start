@@ -18,9 +18,28 @@ Returns Spring Boot Actuator health for the backend and connected dependencies.
 
 ## Ingestion
 
+Sprint 1 implements a sequential ingestion path. Later sprints will make this asynchronous and concurrent.
+
+### `POST /api/v1/ingestion/blocks/{blockNumber}`
+
+Fetches and persists one Ethereum block with native transactions.
+
+Response:
+
+```json
+{
+  "blockNumber": 22000000,
+  "blocksInserted": 1,
+  "transactionsSeen": 142,
+  "transactionsInserted": 142,
+  "checkpointUpdated": true,
+  "status": "SUCCESS"
+}
+```
+
 ### `POST /api/v1/ingestion/jobs`
 
-Starts a block-range ingestion job.
+Starts a small sequential block-range ingestion job. The range is limited by `ethereum.ingestion.max-range-size` while the project is still in the sequential Sprint 1 implementation.
 
 Request:
 
@@ -28,7 +47,7 @@ Request:
 {
   "chainId": 1,
   "startBlock": 22000000,
-  "endBlock": 22000500
+  "endBlock": 22000005
 }
 ```
 
@@ -39,14 +58,17 @@ Response `202 Accepted`:
   "jobId": 42,
   "chainId": 1,
   "startBlock": 22000000,
-  "endBlock": 22000500,
-  "status": "PENDING"
+  "endBlock": 22000005,
+  "processedBlocks": 6,
+  "transactionsInserted": 840,
+  "failedBlocks": 0,
+  "status": "COMPLETED"
 }
 ```
 
 ### `GET /api/v1/ingestion/jobs/{jobId}`
 
-Returns job status and progress.
+Planned endpoint. Returns job status and progress.
 
 Response:
 
@@ -83,11 +105,11 @@ Response:
 
 ### `GET /api/v1/ingestion/failed-blocks?chainId=1&status=PENDING`
 
-Returns failed blocks waiting for retry.
+Planned endpoint. Returns failed blocks waiting for retry.
 
 ### `POST /api/v1/ingestion/failed-blocks/{blockNumber}/retry?chainId=1`
 
-Queues a failed block for retry.
+Planned endpoint. Queues a failed block for retry.
 
 ## Network Analytics
 

@@ -3,13 +3,19 @@ package com.chainsight.ingestion.repository;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 @Repository
 public class BlockJdbcRepository {
@@ -20,39 +26,97 @@ public class BlockJdbcRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public void insertBlock(BlockData block, long chainId) {
+    public long createJob(long chainId, BigInteger startBlock, BigInteger endBlock) {
+        String sql = "INSERT INTO ingestion_jobs (chain_id, start_block, end_block, status) " +
+                     "VALUES (?, ?, ?, 'RUNNING')";
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setLong(1, chainId);
+            ps.setLong(2, toLong(startBlock));
+            ps.setLong(3, toLong(endBlock));
+            return ps;
+        }, keyHolder);
+
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("Database did not return an ingestion job id");
+        }
+        return key.longValue();
+    }
+
+    public void markJobCompleted(long jobId) {
+        String sql = "UPDATE ingestion_jobs " +
+                     "SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP " +
+                     "WHERE id = ?";
+        jdbcTemplate.update(sql, jobId);
+    }
+
+    public void markJobFailed(long jobId, String failureReason) {
+        String sql = "UPDATE ingestion_jobs " +
+                     "SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, failure_reason = ? " +
+                     "WHERE id = ?";
+        jdbcTemplate.update(sql, failureReason, jobId);
+    }
+
+    public int insertBlock(BlockData block, long chainId) {
         String sql = "INSERT INTO blocks (chain_id, block_number, block_hash, block_timestamp, base_fee_per_gas_wei, gas_used, gas_limit) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT (chain_id, block_number) DO NOTHING";
 
-        jdbcTemplate.update(sql,
+        return jdbcTemplate.update(sql,
                 chainId,
-                block.getBlockNumber().longValue(),
-                block.getBlockHash(),
-                Timestamp.from(block.getBlockTimestamp()),
-                block.getBaseFeePerGasWei(), // NUMERIC(78,0) works natively with BigDecimal/BigInteger
-                block.getGasUsed(),
-                block.getGasLimit());
+                toLong(block.blockNumber()),
+                block.blockHash(),
+                Timestamp.from(block.blockTimestamp()),
+                toBigDecimal(block.baseFeePerGasWei()),
+                block.gasUsed(),
+                toLong(block.gasLimit()));
     }
 
-    public void insertTransactions(List<TransactionData> transactions, long chainId, Instant blockTimestamp) {
-        if (transactions.isEmpty()) return;
+    public int insertTransactions(List<TransactionData> transactions, long chainId, Instant blockTimestamp) {
+        if (transactions.isEmpty()) {
+            return 0;
+        }
 
         String sql = "INSERT INTO transactions (chain_id, block_number, transaction_hash, from_address, to_address, value_wei, gas_price_wei, gas_used, status, block_timestamp) " +
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT (chain_id, transaction_hash) DO NOTHING";
 
-        jdbcTemplate.batchUpdate(sql, transactions, 500, (PreparedStatement ps, TransactionData tx) -> {
+        int[][] updateCounts = jdbcTemplate.batchUpdate(sql, transactions, 500, (PreparedStatement ps, TransactionData tx) -> {
             ps.setLong(1, chainId);
-            ps.setLong(2, tx.getBlockNumber().longValue());
-            ps.setString(3, tx.getTransactionHash());
-            ps.setString(4, tx.getFromAddress());
-            ps.setString(5, tx.getToAddress());
-            ps.setBigDecimal(6, tx.getValueWei() != null ? new java.math.BigDecimal(tx.getValueWei()) : java.math.BigDecimal.ZERO);
-            ps.setBigDecimal(7, tx.getGasPriceWei() != null ? new java.math.BigDecimal(tx.getGasPriceWei()) : null);
-            ps.setObject(8, tx.getGasUsed());
-            ps.setObject(9, tx.getStatus());
+            ps.setLong(2, toLong(tx.blockNumber()));
+            ps.setString(3, tx.transactionHash());
+            ps.setString(4, tx.fromAddress());
+            ps.setString(5, tx.toAddress());
+            ps.setBigDecimal(6, toBigDecimal(tx.valueWei(), BigDecimal.ZERO));
+            setNullableBigDecimal(ps, 7, tx.gasPriceWei());
+            setNullableLong(ps, 8, tx.gasUsed());
+            setNullableInteger(ps, 9, tx.status());
             ps.setTimestamp(10, Timestamp.from(blockTimestamp));
+        });
+
+        return countInsertedRows(updateCounts);
+    }
+
+    public void upsertWallets(Set<String> walletAddresses, long chainId, Instant seenAt) {
+        if (walletAddresses.isEmpty()) {
+            return;
+        }
+
+        String sql = "INSERT INTO wallets (chain_id, address, first_seen_at, last_seen_at) " +
+                     "VALUES (?, ?, ?, ?) " +
+                     "ON CONFLICT (chain_id, address) DO UPDATE SET " +
+                     "first_seen_at = LEAST(wallets.first_seen_at, EXCLUDED.first_seen_at), " +
+                     "last_seen_at = GREATEST(wallets.last_seen_at, EXCLUDED.last_seen_at)";
+
+        jdbcTemplate.batchUpdate(sql, walletAddresses.stream().toList(), 500, (PreparedStatement ps, String address) -> {
+            Timestamp timestamp = Timestamp.from(seenAt);
+            ps.setLong(1, chainId);
+            ps.setString(2, address);
+            ps.setTimestamp(3, timestamp);
+            ps.setTimestamp(4, timestamp);
         });
     }
 
@@ -63,6 +127,94 @@ public class BlockJdbcRepository {
                      "last_processed_block = GREATEST(ingestion_checkpoints.last_processed_block, EXCLUDED.last_processed_block), " +
                      "updated_at = CURRENT_TIMESTAMP";
 
-        jdbcTemplate.update(sql, chainId, blockNumber.longValue());
+        jdbcTemplate.update(sql, chainId, toLong(blockNumber));
+    }
+
+    public long countBlocks(long chainId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM blocks WHERE chain_id = ?",
+                Long.class,
+                chainId);
+        return count == null ? 0 : count;
+    }
+
+    public long countTransactions(long chainId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM transactions WHERE chain_id = ?",
+                Long.class,
+                chainId);
+        return count == null ? 0 : count;
+    }
+
+    public long countFailedBlocks(long chainId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM failed_blocks WHERE chain_id = ? AND status IN ('PENDING', 'RETRYING')",
+                Long.class,
+                chainId);
+        return count == null ? 0 : count;
+    }
+
+    public long countActiveJobs(long chainId) {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ingestion_jobs WHERE chain_id = ? AND status IN ('PENDING', 'RUNNING')",
+                Long.class,
+                chainId);
+        return count == null ? 0 : count;
+    }
+
+    public long getLastProcessedBlock(long chainId) {
+        Long checkpoint = jdbcTemplate.queryForObject(
+                "SELECT last_processed_block FROM ingestion_checkpoints WHERE chain_id = ?",
+                Long.class,
+                chainId);
+        return checkpoint == null ? 0 : checkpoint;
+    }
+
+    private BigDecimal toBigDecimal(BigInteger value) {
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    private BigDecimal toBigDecimal(BigInteger value, BigDecimal fallback) {
+        return value == null ? fallback : new BigDecimal(value);
+    }
+
+    private long toLong(BigInteger value) {
+        return value.longValueExact();
+    }
+
+    private void setNullableBigDecimal(PreparedStatement ps, int index, BigInteger value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setNull(index, Types.NUMERIC);
+            return;
+        }
+        ps.setBigDecimal(index, new BigDecimal(value));
+    }
+
+    private void setNullableLong(PreparedStatement ps, int index, Long value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setNull(index, Types.BIGINT);
+            return;
+        }
+        ps.setLong(index, value);
+    }
+
+    private void setNullableInteger(PreparedStatement ps, int index, Integer value) throws java.sql.SQLException {
+        if (value == null) {
+            ps.setNull(index, Types.SMALLINT);
+            return;
+        }
+        ps.setInt(index, value);
+    }
+
+    private int countInsertedRows(int[][] updateCounts) {
+        int insertedRows = 0;
+        for (int[] batch : updateCounts) {
+            for (int count : batch) {
+                if (count > 0 || count == Statement.SUCCESS_NO_INFO) {
+                    insertedRows++;
+                }
+            }
+        }
+        return insertedRows;
     }
 }

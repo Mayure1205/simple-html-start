@@ -9,13 +9,11 @@ import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.methods.response.EthBlock;
-import org.web3j.protocol.core.methods.response.Transaction;
 
 import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -55,32 +53,31 @@ public class EthereumRpcAdapter {
                 .map(this::mapToTransactionData)
                 .collect(Collectors.toList());
 
-        // Extract baseFeePerGas if EIP-1559 block
-        BigInteger baseFee = null;
-        if (ethBlock.getBaseFeePerGas() != null && !ethBlock.getBaseFeePerGas().isEmpty()) {
-            baseFee = new BigInteger(ethBlock.getBaseFeePerGas().replace("0x", ""), 16);
-        }
-
-        return BlockData.builder()
-                .blockNumber(ethBlock.getNumber())
-                .blockHash(ethBlock.getHash())
-                .blockTimestamp(Instant.ofEpochSecond(ethBlock.getTimestamp().longValue()))
-                .baseFeePerGasWei(baseFee)
-                .gasUsed(ethBlock.getGasUsed().longValue())
-                .gasLimit(ethBlock.getGasLimit())
-                .transactions(transactions)
-                .build();
+        return new BlockData(
+                ethBlock.getNumber(),
+                ethBlock.getHash(),
+                Instant.ofEpochSecond(ethBlock.getTimestamp().longValueExact()),
+                ethBlock.getBaseFeePerGas(),
+                ethBlock.getGasUsed().longValueExact(),
+                ethBlock.getGasLimit(),
+                transactions
+        );
     }
 
     private TransactionData mapToTransactionData(EthBlock.TransactionObject tx) {
-        return TransactionData.builder()
-                .blockNumber(tx.getBlockNumber())
-                .transactionHash(tx.getHash())
-                .fromAddress(tx.getFrom())
-                .toAddress(tx.getTo()) // Can be null for contract creation
-                .valueWei(tx.getValue())
-                .gasPriceWei(tx.getGasPrice())
-                // gasLimit in transaction is tx.getGas()
-                .build();
+        return new TransactionData(
+                tx.getBlockNumber(),
+                tx.getHash(),
+                normalizeAddress(tx.getFrom()),
+                normalizeAddress(tx.getTo()),
+                tx.getValue(),
+                tx.getGasPrice(),
+                null,
+                null
+        );
+    }
+
+    private String normalizeAddress(String address) {
+        return address == null ? null : address.toLowerCase();
     }
 }

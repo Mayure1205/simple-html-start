@@ -29,7 +29,10 @@ spring:
     baseline-on-migrate: true
 
 ethereum:
+  chain-id: ${ETH_CHAIN_ID:1}
   rpc-url: ${ETH_RPC_URL:https://cloudflare-eth.com}
+  ingestion:
+    max-range-size: ${ETH_INGESTION_MAX_RANGE_SIZE:100}
 
 management:
   endpoints:
