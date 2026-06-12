@@ -47,6 +47,8 @@ docker-compose.override.yml
 
 # Environment Variables
 .env
+.env.*
+infra/.env.prod
 
 # Database Data 
 postgres_data/

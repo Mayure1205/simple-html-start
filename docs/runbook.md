@@ -49,6 +49,33 @@ Stop containers and delete local database/cache volumes:
 docker compose -f infra/docker-compose.local.yml down -v
 ```
 
+## Production Deployment Readiness
+
+Sprint 7 adds production deployment artifacts, but this repository does not yet contain live AWS evidence.
+
+Use the AWS deployment runbook when you are ready to deploy the demo:
+
+```text
+docs/aws-deployment.md
+```
+
+Production files:
+
+- `backend/Dockerfile`
+- `infra/docker-compose.prod.yml`
+- `infra/env.prod.example`
+- `infra/nginx/chainsight.conf`
+
+## Evidence And Release Readiness
+
+Sprint 8 adds evidence and release planning files. These files are useful for interviews, but they are not benchmark results by themselves.
+
+- CI workflow: `.github/workflows/backend-ci.yml`
+- Benchmark template: `docs/benchmark-report.md`
+- Release checklist: `docs/release-checklist.md`
+
+Do not claim measured performance, passing GitHub Actions, or a `v1.0.0` release until those outputs exist.
+
 ## Environment Variables
 
 | Variable | Default | Purpose |

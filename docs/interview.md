@@ -12,7 +12,7 @@ ChainSight is a backend data engineering project. It takes Ethereum block data f
 
 Technical interview answer:
 
-ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented system currently supports Web3j-based block and transaction receipt fetching, bounded concurrent block extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, network analytics APIs using PostgreSQL window functions, Redis-backed cache/locks/rate limiting, Resilience4j circuit breaker protection around RPC calls, and a local operational dashboard served by Spring Boot.
+ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented system currently supports Web3j-based block and transaction receipt fetching, async range jobs, bounded concurrent block and receipt extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, network analytics APIs using PostgreSQL window functions, wallet transaction-history and summary APIs, Redis-backed cache/locks/rate limiting, Resilience4j circuit breaker protection around RPC calls, a local operational dashboard with wallet lookup served by Spring Boot, deployment-readiness artifacts, and evidence-readiness documentation.
 
 ### 2-Minute Explanation
 
@@ -22,7 +22,7 @@ Ethereum is not the product here. It is the data source. The real engineering pr
 
 Technical interview answer:
 
-The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds a bounded custom `ThreadPoolExecutor` and `CompletableFuture` scheduling so multiple blocks can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions. Sprint 5 adds Redis-backed analytics caching, a Redis distributed ingestion lock, a Redis token-bucket API rate limiter, and Resilience4j circuit breaker wrapping around Ethereum RPC calls. Sprint 6 adds a static dashboard for operating and demoing the implemented ingestion and analytics APIs.
+The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds async range-job submission, bounded custom `ThreadPoolExecutor` beans, and `CompletableFuture` scheduling so multiple blocks and receipts can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions. Sprint 5 adds Redis-backed analytics caching, a Redis distributed ingestion lock, a Redis token-bucket API rate limiter, and Resilience4j circuit breaker wrapping around Ethereum RPC calls. Sprint 6 adds a static dashboard for operating and demoing the implemented ingestion and analytics APIs. Sprint 7 adds Docker Compose and Nginx deployment-readiness artifacts, Sprint 8 adds a GitHub Actions workflow file plus benchmark and release-readiness documentation, and Sprint 9 adds wallet transaction history, wallet summary APIs, and a wallet lookup panel in the dashboard.
 
 ## Architecture Flow
 
@@ -63,6 +63,9 @@ Important implemented files:
 | Network analytics API | `backend/src/main/java/com/chainsight/analytics/controller/NetworkAnalyticsController.java` |
 | Network analytics service | `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java` |
 | Network analytics repository | `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java` |
+| Wallet analytics API | `backend/src/main/java/com/chainsight/analytics/controller/WalletAnalyticsController.java` |
+| Wallet analytics service | `backend/src/main/java/com/chainsight/analytics/service/WalletAnalyticsService.java` |
+| Wallet analytics repository | `backend/src/main/java/com/chainsight/analytics/repository/WalletAnalyticsRepository.java` |
 | Redis ingestion lock | `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java` |
 | Redis token bucket | `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java` |
 | API rate limit filter | `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java` |
@@ -70,10 +73,18 @@ Important implemented files:
 | Dashboard CSS | `backend/src/main/resources/static/dashboard/dashboard.css` |
 | Dashboard JavaScript | `backend/src/main/resources/static/dashboard/dashboard.js` |
 | Sprint roadmap | `docs/sprint-roadmap.md` |
+| Production Dockerfile | `backend/Dockerfile` |
+| Production Docker Compose | `infra/docker-compose.prod.yml` |
+| Nginx reverse proxy config | `infra/nginx/chainsight.conf` |
+| AWS deployment runbook | `docs/aws-deployment.md` |
+| Backend CI workflow | `.github/workflows/backend-ci.yml` |
+| Benchmark report template | `docs/benchmark-report.md` |
+| Release checklist | `docs/release-checklist.md` |
 | Global errors | `backend/src/main/java/com/chainsight/exception/GlobalExceptionHandler.java` |
 | Schema | `backend/src/main/resources/db/migration/V1__init_schema.sql` |
 | Unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java` |
 | Analytics unit tests | `backend/src/test/java/com/chainsight/analytics/service/NetworkAnalyticsServiceTest.java` |
+| Wallet analytics unit tests | `backend/src/test/java/com/chainsight/analytics/service/WalletAnalyticsServiceTest.java` |
 | PostgreSQL integration tests | `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java` |
 
 ## Sprint-Wise Implementation Summary
@@ -256,13 +267,18 @@ Evidence:
 Status:
 
 - Implemented in code.
-- Unit tests added but not run in this turn because we are avoiding heavier commands.
+- Unit tests pass when Maven is run with JDK 21.
+- PostgreSQL/Testcontainers tests are present, but Docker-dependent cases were skipped when Docker was unavailable.
 
 What was built:
 
+- Asynchronous range-job acceptance: `POST /api/v1/ingestion/jobs` returns quickly with `RUNNING`.
+- A bounded job-coordinator executor for long-running range jobs.
 - A custom bounded `ThreadPoolExecutor` bean for block extraction.
+- A custom bounded `ThreadPoolExecutor` bean for transaction receipt fetching.
 - Configurable executor settings in `application.yml`.
 - A `CompletableFuture` pipeline that schedules block RPC fetches concurrently for a range.
+- A `CompletableFuture` pipeline that fetches transaction receipts concurrently inside a block.
 - Ordered persistence after extraction, so checkpoint updates remain simple and restart-safe.
 - Executor lifecycle cleanup through Spring bean destroy method.
 - Startup validation for invalid executor settings.
@@ -276,6 +292,7 @@ Where it is used:
 - Executor config: `backend/src/main/java/com/chainsight/config/IngestionExecutorConfig.java`
 - Executor properties: `backend/src/main/resources/application.yml`
 - CompletableFuture scheduling: `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`
+- Parallel receipt fetching: `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java`
 - Unit proof: `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java`
 
 Java/Spring concepts:
@@ -284,19 +301,21 @@ Java/Spring concepts:
 - Bounded `LinkedBlockingQueue`.
 - Custom thread naming.
 - `CallerRunsPolicy` backpressure.
+- `CompletableFuture.runAsync`.
 - `CompletableFuture.supplyAsync`.
+- `CompletableFuture.allOf`.
 - Spring `@Bean` and `@Qualifier`.
 - Spring bean lifecycle destroy method.
 
 Beginner-friendly explanation:
 
-Before Sprint 3, ChainSight fetched one block, saved it, then fetched the next block. Now it can ask the RPC provider for multiple blocks in parallel, but it still saves them in order. This gives better throughput while keeping recovery logic easy to reason about.
+Before Sprint 3, ChainSight fetched one block, saved it, then fetched the next block. Now the HTTP request only submits a job and returns a job id, while background executors fetch blocks and receipts with bounded parallelism. The database still saves blocks in order, so recovery logic stays easy to reason about.
 
 Technical interview answer:
 
-Range ingestion creates one `CompletableFuture<BlockData>` per block using a named `blockExtractionExecutor`. The executor has bounded threads and bounded queue capacity to avoid unbounded memory growth. After scheduling the extraction futures, the service joins them in block-number order and persists each block in its own transaction. This keeps checkpoint advancement ordered while allowing network-bound RPC extraction to overlap.
+Range ingestion creates a persisted `ingestion_jobs` row, schedules the range on `jobCoordinatorExecutor`, and returns `202 Accepted` with `RUNNING`. The background job creates one `CompletableFuture<BlockData>` per block using `blockExtractionExecutor`. Inside block mapping, transaction receipts are fetched through a separate `receiptFetchExecutor` so receipt calls do not occupy block-extraction threads. All three executors are bounded. The service joins block futures in block-number order and persists each block in its own transaction, keeping checkpoint advancement ordered while allowing network-bound RPC calls to overlap.
 
-The executor bean also uses `destroyMethod = "shutdown"` so Spring shuts down worker threads when the application context closes. Invalid pool settings fail fast at startup.
+The executor beans use `destroyMethod = "shutdown"` so Spring shuts down worker threads when the application context closes. Invalid pool settings fail fast at startup.
 
 Possible interviewer questions:
 
@@ -304,6 +323,7 @@ Possible interviewer questions:
 |---|---|
 | Why not write blocks concurrently too? | Ordered writes keep checkpoint recovery simpler for the MVP. |
 | Why a bounded executor? | It prevents too many RPC tasks from consuming memory or overwhelming the provider. |
+| Why separate pools for jobs, blocks, and receipts? | It avoids nested-task deadlock and lets each workload have its own limits. |
 | What does `CallerRunsPolicy` do? | If the pool and queue are full, the caller thread runs the task, creating natural backpressure. |
 | Where is `CompletableFuture` used? | `BlockIngestionService.scheduleBlockExtraction(...)` uses `supplyAsync`. |
 | How are worker threads cleaned up? | The executor bean declares `destroyMethod = "shutdown"`. |
@@ -311,8 +331,11 @@ Possible interviewer questions:
 Evidence:
 
 - Code: `IngestionExecutorConfig.java`.
+- Code: `BlockIngestionService.ingestRange(...)`.
 - Code: `BlockIngestionService.scheduleBlockExtraction(...)`.
+- Code: `EthereumRpcAdapter.mapTransactions(...)`.
 - Test added: `BlockIngestionServiceTest.ingestRangeSchedulesAllBlockFetchesBeforePersistingInOrder`.
+- Verification: `mvn test -q` passed when `JAVA_HOME` was set to JDK 21; Docker-dependent Testcontainers cases were skipped because Docker was unavailable.
 
 ### Sprint 4 - Network Analytics APIs
 
@@ -456,6 +479,7 @@ What was built:
 - Range ingestion form.
 - Network daily-metrics chart.
 - Largest-transactions table.
+- Wallet lookup panel for wallet summary and transaction history.
 - Failed-block list and retry action.
 - Activity log.
 - Responsive layout for desktop and smaller screens.
@@ -486,7 +510,7 @@ The dashboard is a simple control room for the backend. It shows ingestion progr
 
 Technical interview answer:
 
-The dashboard is intentionally static and served from `src/main/resources/static`, so it does not introduce a separate Node or React build pipeline yet. It calls the implemented REST APIs on the same origin, renders daily transaction data on a canvas, and keeps Sprint 6 focused on operational visibility rather than frontend architecture.
+The dashboard is intentionally static and served from `src/main/resources/static`, so it does not introduce a separate Node or React build pipeline yet. It calls the implemented REST APIs on the same origin, renders daily transaction data on a canvas, and includes a wallet lookup panel that calls the wallet summary and wallet transaction-history APIs.
 
 Possible interviewer questions:
 
@@ -494,7 +518,7 @@ Possible interviewer questions:
 |---|---|
 | Why static dashboard instead of React? | It avoids frontend build complexity while proving the backend can be operated visually. |
 | Where is it served from? | Spring Boot static resources under `/dashboard/index.html`. |
-| What APIs does it use? | Ingestion status/jobs/failed-blocks and network analytics endpoints. |
+| What APIs does it use? | Ingestion status/jobs/failed-blocks, network analytics endpoints, and wallet analytics endpoints. |
 | Is this production UI complete? | No. It is a local operational dashboard for demos and development. |
 
 Evidence:
@@ -502,6 +526,202 @@ Evidence:
 - Code: `backend/src/main/resources/static/dashboard`.
 - Runbook: `docs/runbook.md`.
 - Roadmap: `docs/sprint-roadmap.md`.
+
+### Sprint 7 - AWS Deployment Readiness
+
+Status:
+
+- Deployment artifacts and runbook are implemented.
+- No AWS instance has been created or verified yet.
+- No public URL exists yet, so do not claim the project is hosted.
+
+What was built:
+
+- Production backend Dockerfile using Java 21.
+- Production Docker Compose stack for backend, PostgreSQL, Redis, and Nginx.
+- Nginx reverse proxy config for routing public HTTP traffic to Spring Boot.
+- Production environment variable template.
+- AWS EC2 deployment runbook for a controlled t3.medium Mumbai-region demo.
+- Docker ignore files to keep build context and secrets cleaner.
+
+Why it was needed:
+
+- The project needs a repeatable path from local development to a portfolio demo server, but we should not jump to Kubernetes, Terraform, RDS, or ElastiCache before the MVP needs them.
+
+Where it is used:
+
+- Backend image: `backend/Dockerfile`
+- Backend Docker context ignore: `backend/.dockerignore`
+- Root Docker context ignore: `.dockerignore`
+- Production stack: `infra/docker-compose.prod.yml`
+- Environment template: `infra/env.prod.example`
+- Nginx config: `infra/nginx/chainsight.conf`
+- Deployment instructions: `docs/aws-deployment.md`
+
+Java/Spring/Docker/AWS concepts:
+
+- Multi-stage Docker build.
+- Java 21 JRE runtime image.
+- Docker Compose service health checks.
+- Private Docker network for backend, PostgreSQL, Redis, and Nginx.
+- Nginx reverse proxy.
+- EC2 single-VM deployment.
+- Secret handling through environment variables.
+
+Beginner-friendly explanation:
+
+Sprint 7 prepares ChainSight to run on one AWS EC2 machine. The backend, database, cache, and Nginx can be started together with Docker Compose. This is deployment readiness, not proof of live hosting yet.
+
+Technical interview answer:
+
+The production packaging uses a multi-stage Dockerfile to build the Spring Boot jar with JDK 21 and run it on a smaller JRE image. `infra/docker-compose.prod.yml` wires the backend to PostgreSQL and Redis over a private bridge network, exposes only Nginx on port 80, and keeps PostgreSQL/Redis internal. The runbook documents a t3.medium EC2 deployment path, budget controls, required environment variables, and evidence to capture after real deployment.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Is ChainSight hosted on AWS now? | Not yet. The repo has deployment-ready artifacts, but no live EC2 evidence has been captured. |
+| Why Docker Compose on one EC2 instead of Kubernetes? | For a portfolio MVP, one VM is cheaper, simpler, and enough to prove backend deployment basics. |
+| Why Nginx? | It exposes one public HTTP entry point and proxies requests to the Spring Boot container. |
+| Are PostgreSQL and Redis public? | No. In the production Compose file they stay on the internal Docker network. |
+| Where do secrets go? | In `infra/.env.prod`, which is ignored by Git. |
+
+Evidence:
+
+- Code: `backend/Dockerfile`.
+- Code: `infra/docker-compose.prod.yml`.
+- Code: `infra/nginx/chainsight.conf`.
+- Runbook: `docs/aws-deployment.md`.
+- Runtime evidence is still pending until the stack is started on EC2.
+
+### Sprint 8 - Evidence And Release Readiness
+
+Status:
+
+- Evidence and release-readiness files are implemented.
+- Benchmark templates exist, but no benchmark measurements have been captured yet.
+- GitHub Actions workflow exists, but no passing remote run link has been captured yet.
+- `v1.0.0` has not been tagged.
+
+What was built:
+
+- Backend GitHub Actions workflow for Java 21 Maven tests.
+- Benchmark report template for ingestion timing and PostgreSQL `EXPLAIN ANALYZE`.
+- Release checklist for deciding when `v1.0.0` is honest to tag.
+- README and evidence ledger updates so project status is no longer stuck at early sprints.
+
+Why it was needed:
+
+- A portfolio project needs proof, not just code. Sprint 8 adds the structure for collecting CI, benchmark, and release evidence without inventing results before they exist.
+
+Where it is used:
+
+- CI workflow: `.github/workflows/backend-ci.yml`
+- Benchmark template: `docs/benchmark-report.md`
+- Release checklist: `docs/release-checklist.md`
+- Evidence ledger: `docs/interview-evidence.md`
+- Roadmap: `docs/sprint-roadmap.md`
+
+Java/Spring/DevOps concepts:
+
+- GitHub Actions workflow.
+- Java 21 setup in CI.
+- Maven test job.
+- Manual workflow dispatch.
+- Benchmark methodology.
+- `EXPLAIN (ANALYZE, BUFFERS)`.
+- Release checklist discipline.
+
+Beginner-friendly explanation:
+
+Sprint 8 creates the proof system. It tells GitHub how to run backend tests, gives us a place to record benchmark numbers later, and defines what must be true before calling the project `v1.0.0`.
+
+Technical interview answer:
+
+The CI workflow checks out the repository, installs Temurin Java 21, uses Maven caching through `actions/setup-java`, and runs `mvn -B test` from the backend directory. The benchmark report captures the exact ingestion and SQL-analysis methodology, but intentionally leaves results as TODO until measurements are run on real data. The release checklist prevents tagging a release before tests, evidence, dashboard checks, and deployment claims are backed by artifacts.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Is CI running successfully yet? | The workflow file exists, but a passing remote GitHub Actions run has not been captured yet. |
+| Why create a benchmark report before numbers? | It defines the method first, so later numbers are reproducible and not random claims. |
+| Can you claim performance improvements now? | No. The code has performance-oriented design, but measured throughput and query timings are still pending. |
+| Why not tag `v1.0.0` now? | The checklist still needs passing CI evidence, benchmark evidence, and optional deployment evidence depending on the claim. |
+
+Evidence:
+
+- Code: `.github/workflows/backend-ci.yml`.
+- Docs: `docs/benchmark-report.md`.
+- Docs: `docs/release-checklist.md`.
+- Evidence ledger: `docs/interview-evidence.md`.
+
+### Sprint 9 - Wallet Analytics API
+
+Status:
+
+- Implemented in code.
+- Focused unit tests were added.
+- Tests were not run in this turn because we are avoiding heavier commands.
+
+What was built:
+
+- `GET /api/v1/analytics/wallets/{address}/transactions`
+- `GET /api/v1/analytics/wallets/{address}/summary`
+- Wallet address normalization to lowercase.
+- Ethereum address format validation.
+- Pagination validation for wallet transaction history.
+- SQL repository queries over the existing `transactions` table.
+
+Why it was needed:
+
+- Network analytics explain the chain as a whole, but interview demos also need an entity-level view. Wallet analytics shows how the same warehouse can answer questions for one address without adding a new data source.
+
+Where it is used:
+
+- Controller: `backend/src/main/java/com/chainsight/analytics/controller/WalletAnalyticsController.java`
+- Service: `backend/src/main/java/com/chainsight/analytics/service/WalletAnalyticsService.java`
+- Repository: `backend/src/main/java/com/chainsight/analytics/repository/WalletAnalyticsRepository.java`
+- DTOs: `backend/src/main/java/com/chainsight/analytics/dto/WalletTransactionResponse.java`
+- DTOs: `backend/src/main/java/com/chainsight/analytics/dto/WalletTransactionsResponse.java`
+- DTOs: `backend/src/main/java/com/chainsight/analytics/dto/WalletSummaryResponse.java`
+- Tests: `backend/src/test/java/com/chainsight/analytics/service/WalletAnalyticsServiceTest.java`
+- API docs: `docs/api-contract.md`
+
+Java/Spring/PostgreSQL concepts:
+
+- Spring `@RestController`, `@Service`, and `@Repository`.
+- `@PathVariable` for wallet address.
+- Pagination with `page`, `size`, `LIMIT`, and `OFFSET`.
+- SQL `CASE WHEN` for sent/received direction and value totals.
+- B-tree indexes on `from_address` and `to_address` query paths.
+- Validation and normalization at the service boundary.
+
+Beginner-friendly explanation:
+
+The wallet endpoints let you ask, "What happened for this one address?" The history endpoint lists sent and received transactions, and the summary endpoint totals how much Wei the address sent and received.
+
+Technical interview answer:
+
+Wallet analytics are implemented as SQL-backed read APIs over the indexed `transactions` table. The service validates the chain id, normalizes the address to lowercase, validates Ethereum address shape, and enforces pagination limits. The repository uses `from_address` and `to_address` filters to fetch wallet history and uses SQL `CASE WHEN` expressions to compute sent count, received count, sent value, received value, and net flow.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Why normalize wallet addresses? | Ethereum addresses can be supplied with mixed case, but the warehouse stores normalized lowercase addresses. |
+| Which indexes help wallet history? | `idx_transactions_chain_from_timestamp` and `idx_transactions_chain_to_timestamp`. |
+| Why use SQL `CASE WHEN`? | It lets PostgreSQL classify sent/received rows and aggregate totals in the database. |
+| Is token wallet activity included? | No. Sprint 9 only covers native transaction rows already stored in `transactions`. |
+| Is wallet analytics cached? | Not yet. Redis caching is currently implemented for network analytics only. |
+
+Evidence:
+
+- Code: `WalletAnalyticsController.java`.
+- Code: `WalletAnalyticsService.java`.
+- Code: `WalletAnalyticsRepository.java`.
+- Test added: `WalletAnalyticsServiceTest.java`.
+- API contract: `docs/api-contract.md`.
 
 ## Core Java Concepts Used
 
@@ -514,10 +734,11 @@ Evidence:
 | Exception handling | `RpcFetchException`, `GlobalExceptionHandler` | Converts RPC and validation failures into API errors. |
 | Collections | `List<TransactionData>`, `Set<String>` | Stores transactions and unique wallet addresses. |
 | `ConcurrentHashMap` | `BlockIngestionService.activeRangeJobsByChain` | Prevents overlapping same-chain range ingestion jobs in one JVM. |
-| `ThreadPoolExecutor` | `IngestionExecutorConfig.blockExtractionExecutor(...)` | Runs bounded block extraction workers. |
-| `CompletableFuture` | `BlockIngestionService.scheduleBlockExtraction(...)` | Schedules RPC fetches concurrently. |
+| `ThreadPoolExecutor` | `IngestionExecutorConfig` | Runs bounded job coordinator, block extraction, and receipt fetch workers. |
+| `CompletableFuture` | `BlockIngestionService`, `EthereumRpcAdapter` | Schedules async range jobs, concurrent block fetches, and concurrent receipt fetches. |
 | `LocalDate` | `NetworkAnalyticsController` | Accepts date-range query parameters for analytics. |
 | `BigDecimal` | Analytics DTOs and repository mapping | Represents SQL numeric analytics values safely. |
+| Regex `Pattern` | `WalletAnalyticsService` | Validates Ethereum wallet address shape before querying. |
 | `UUID` | `RedisIngestionLockService` | Creates unique lock tokens for safe distributed lock release. |
 | Browser `fetch` | `dashboard.js` | Calls backend APIs from the local dashboard. |
 
@@ -536,6 +757,7 @@ Evidence:
 | `@Bean` | `IngestionExecutorConfig` | Registers the custom executor in the Spring container. |
 | `@Qualifier` | `BlockIngestionService` constructor | Injects the named block extraction executor. |
 | `@RestController` for analytics | `NetworkAnalyticsController` | Exposes network analytics endpoints. |
+| `@PathVariable` | `WalletAnalyticsController` | Reads the wallet address from the URL path. |
 | `@DateTimeFormat` | `NetworkAnalyticsController` | Parses ISO date request parameters. |
 | `OncePerRequestFilter` | `ApiRateLimitFilter` | Applies rate limiting before controllers run. |
 | Static resources | `backend/src/main/resources/static/dashboard` | Serves the local dashboard from Spring Boot. |
@@ -551,6 +773,8 @@ Implemented:
 - Checkpoint table for restart progress.
 - B-tree indexes for likely wallet/time/block queries.
 - SQL aggregation for daily network metrics.
+- SQL `CASE WHEN` aggregation for wallet sent/received totals.
+- `LIMIT` and `OFFSET` pagination for wallet transaction history.
 - Window functions with `LAG()` and `RANK()`.
 - Transaction rollback behavior tested in Testcontainers test code.
 
@@ -559,6 +783,7 @@ Important files:
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`
 - `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java`
 - `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java`
+- `backend/src/main/java/com/chainsight/analytics/repository/WalletAnalyticsRepository.java`
 - `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java`
 
 ## Concurrency Concepts Used
@@ -566,20 +791,27 @@ Important files:
 Implemented now:
 
 - `ConcurrentHashMap` guard for active range ingestion jobs in one backend JVM.
+- Redis distributed lock for active range ingestion across backend instances.
+- Bounded custom `ThreadPoolExecutor` for async job coordination.
 - Bounded custom `ThreadPoolExecutor` for block extraction.
+- Bounded custom `ThreadPoolExecutor` for receipt fetching.
+- `CompletableFuture.runAsync` for background range-job execution.
 - `CompletableFuture.supplyAsync` pipeline for range RPC fetch scheduling.
+- `CompletableFuture.allOf` for receipt fetch fan-in.
 
 Important:
 
-Do not claim distributed locking or concurrent database writes yet.
+Do not claim concurrent database writes yet. The database load phase is intentionally ordered by block number.
 
 ## Redis, Resilience, Docker, AWS, And CI/CD Concepts Used
 
 Implemented now:
 
-- Redis is present in Docker Compose, but application Redis logic is not implemented yet.
 - Docker Compose exists for local PostgreSQL and Redis.
+- Production Docker Compose and Nginx config are prepared.
+- GitHub Actions backend CI workflow file is prepared.
 - Redis analytics cache is implemented.
+- Wallet analytics read APIs are implemented without Redis caching.
 - Redis distributed ingestion lock is implemented.
 - Redis token bucket API rate limiter is implemented.
 - Resilience4j circuit breaker wraps Ethereum RPC calls.
@@ -587,12 +819,13 @@ Implemented now:
 
 Do not claim yet:
 
-- Redis caching.
-- Redis distributed locks.
-- Token bucket rate limiting.
-- Circuit breaker behavior.
-- AWS deployment.
-- GitHub Actions CI.
+- Live AWS deployment.
+- Public demo URL.
+- HTTPS.
+- Passing GitHub Actions CI run.
+- Filled benchmark results.
+- Release tag `v1.0.0`.
+- Measured production resilience behavior.
 
 ## Important Design Decisions
 
@@ -639,18 +872,19 @@ Evidence:
 - `BlockIngestionService.ingestRange(...)`
 - `BlockIngestionServiceTest.ingestRangeResumesFromCheckpointAndSkipsCommittedBlocks`
 
-### In-Memory Overlap Guard
+### Same-Chain Overlap Guards
 
 Beginner-friendly:
 
-Only one range ingestion job for Ethereum should run in this backend instance at a time. This avoids accidental duplicate work while the project is still sequential.
+Only one range ingestion job for Ethereum should run at a time. This avoids accidental duplicate work while a large range is already running.
 
 Technical answer:
 
-`BlockIngestionService` uses a `ConcurrentHashMap<Long, Long>` keyed by chain id. `putIfAbsent` atomically reserves the chain before the job starts, and a `finally` block releases the reservation after completion or failure.
+`BlockIngestionService` uses two guards. A Redis lock protects multiple backend instances, and a `ConcurrentHashMap<Long, Long>` keyed by chain id protects the current JVM. Both are released only when the asynchronous job finishes.
 
 Evidence:
 
+- `RedisIngestionLockService`
 - `BlockIngestionService.activeRangeJobsByChain`
 - `BlockIngestionServiceTest.ingestRangeRejectsOverlappingRangeForSameChain`
 
@@ -693,11 +927,14 @@ The roadmap keeps the project from growing in every direction at once.
 
 Technical answer:
 
-`docs/sprint-roadmap.md` separates implemented Sprint 6 dashboard work from planned Sprint 7 deployment and Sprint 8 evidence tasks. This prevents claiming AWS, CI/CD, benchmarks, or advanced frontend work before they exist.
+`docs/sprint-roadmap.md` separates implemented dashboard, deployment-readiness, and evidence-readiness work from future measurement and release tasks. This prevents claiming live AWS hosting, passing CI, benchmark results, or advanced frontend work before they exist.
 
 Evidence:
 
 - `docs/sprint-roadmap.md`
+- `docs/aws-deployment.md`
+- `docs/benchmark-report.md`
+- `docs/release-checklist.md`
 
 ## Failure Scenarios Handled
 
@@ -707,9 +944,13 @@ Evidence:
 | Start block greater than end block | Rejects request | `BlockIngestionService.validateRequest(...)` |
 | Range too large | Rejects request based on config | `BlockIngestionServiceTest` |
 | Overlapping same-chain range request in one JVM | Rejects request before creating a second job | `BlockIngestionService.activeRangeJobsByChain` |
+| Overlapping same-chain range request across instances | Redis lock rejects the second job while the first lock is held | `RedisIngestionLockService`, `BlockIngestionService` |
 | Executor queue saturation | Uses `CallerRunsPolicy` backpressure | `IngestionExecutorConfig` |
 | Invalid executor configuration | Fails startup with `IllegalArgumentException` | `IngestionExecutorConfig.validateExecutorSettings(...)` |
 | Unsupported analytics chain ID | Rejects request | `NetworkAnalyticsServiceTest` |
+| Invalid wallet address | Rejects request before querying | `WalletAnalyticsServiceTest` |
+| Wallet page below zero | Rejects request before querying | `WalletAnalyticsServiceTest` |
+| Wallet page size too large | Rejects request before querying | `WalletAnalyticsServiceTest` |
 | Invalid analytics date range | Rejects request | `NetworkAnalyticsServiceTest` |
 | Analytics limit too large | Rejects request | `NetworkAnalyticsServiceTest` |
 | Analytics cache miss | Falls back to PostgreSQL and writes Redis cache | `NetworkAnalyticsService` |
@@ -734,32 +975,37 @@ Evidence:
 | Why use PostgreSQL? | It gives ACID transactions, constraints, indexes, and analytical SQL in one mature database. |
 | What makes ingestion restart-safe? | Block data and checkpoint update happen in one transaction, and the next run reads the checkpoint. |
 | How do you avoid duplicates? | Unique constraints plus `ON CONFLICT DO NOTHING`. |
-| Is the current overlap guard distributed? | No. It protects one JVM. Redis `SETNX` is planned for multi-instance deployment. |
-| What is the Sprint 3 concurrency model? | Parallel RPC extraction with ordered database persistence. |
-| What analytics are implemented? | Network daily metrics and largest native transactions. |
+| Is the current overlap guard distributed? | Yes. A Redis lock protects multiple instances, and a local `ConcurrentHashMap` protects the current JVM. |
+| What is the Sprint 3 concurrency model? | Async job submission, parallel block extraction, parallel receipt fetching, and ordered database persistence. |
+| What analytics are implemented? | Network daily metrics, largest native transactions, wallet transaction history, and wallet summary. |
 | Which SQL window functions are used? | `LAG()` for previous-day comparison and `RANK()` for rankings. |
 | Where is Redis used? | Analytics cache, ingestion distributed lock, and API token bucket. |
 | Where is Resilience4j used? | Ethereum block and receipt RPC calls in `EthereumRpcAdapter`. |
 | What does the dashboard prove? | The backend can be operated and demoed visually through implemented APIs. |
+| Is AWS deployment complete? | Not yet. Docker, Compose, Nginx, and the EC2 runbook are ready, but no live URL or deployment evidence exists. |
+| Is CI implemented? | A GitHub Actions workflow file is present, but a passing remote run has not been captured yet. |
 | Why not JPA for transaction rows? | JPA is useful for metadata, but batch ETL inserts need direct SQL control. |
 | What extra value do receipts add? | They add execution status and actual gas used, which makes the warehouse useful for gas and failure analytics later. |
 | What is proven today? | Service resume behavior and validation are unit-tested. PostgreSQL integration tests are written but need Docker running to execute. |
-| What is not implemented yet? | Retry with backoff, wallet/token analytics, AWS, CI/CD, and benchmark evidence. |
+| What is not implemented yet? | Retry with backoff, top-wallet analytics, token analytics, live AWS hosting, passing CI evidence, HTTPS, and benchmark measurements. |
 
 ## Honest Limitations
 
 - RPC extraction is concurrent, but database persistence is still ordered and not parallel.
 - Cross-instance locking depends on Redis availability and still needs runtime verification.
-- Analytics currently covers network-level views only.
+- Analytics currently covers network-level views and native wallet views only; token analytics is not implemented yet.
 - `EXPLAIN ANALYZE` benchmarks are not captured yet.
 - Redis and circuit breaker runtime behavior still needs local Docker/manual verification.
 - The dashboard is static and local; it is not authenticated, deployed, or manually browser-verified yet.
 - Token transfer extraction is not implemented yet.
-- Transaction receipts are fetched sequentially today, so this is correct but not optimized for high-throughput ingestion yet.
-- Redis is configured locally but not used in application logic yet.
-- Circuit breaker dependency exists but RPC calls are not wrapped yet.
+- Transaction receipts are fetched with bounded parallelism, but throughput has not been benchmarked yet.
+- AWS deployment files exist, but no EC2 deployment evidence or public URL has been captured yet.
+- Nginx config exists, but HTTPS/domain setup is not implemented yet.
 - Testcontainers integration tests require Docker Desktop to be running.
-- No AWS deployment or CI pipeline yet.
+- GitHub Actions workflow exists, but no passing remote run link has been captured yet.
+- Benchmark report exists as a template, but real measurements are not captured yet.
+- Release checklist exists, but `v1.0.0` is not tagged yet.
+- Top-wallet ranking is not implemented yet.
 
 ## Resume Bullet
 
@@ -773,9 +1019,14 @@ including Web3j block fetching, bounded CompletableFuture-based range extraction
 checkpoint-aware ordered persistence,
 transaction receipt mapping for status and gas-used fields,
 PostgreSQL window-function network analytics APIs,
+wallet transaction-history and summary APIs,
 Redis-backed analytics caching, Redis distributed ingestion locking,
 Redis token-bucket API rate limiting, Resilience4j RPC circuit breaker wrapping,
-and a Spring Boot-served local operations dashboard,
+asynchronous range-job submission, parallel transaction-receipt fetching,
+a Spring Boot-served local operations dashboard with wallet lookup,
+and Docker Compose/Nginx deployment-readiness artifacts,
+GitHub Actions backend CI workflow,
+benchmark and release-readiness documentation,
 in-memory same-chain job overlap protection,
 Flyway-managed PostgreSQL schema, JdbcTemplate batch inserts, idempotent
 database writes with unique constraints, and unit/Testcontainers tests for
@@ -784,15 +1035,12 @@ restart-safety scenarios.
 
 ## Future Topics — Do Not Claim Yet
 
-- Redis cache.
-- Redis distributed ingestion lock.
-- Redis token-bucket rate limiter.
-- Resilience4j circuit breaker around RPC calls.
-- Wallet analytics APIs.
+- Top-wallet analytics API.
 - Token analytics APIs.
-- Wallet/token dashboard views.
-- EXPLAIN ANALYZE benchmark report.
-- GitHub Actions CI.
-- AWS EC2 deployment.
-- Nginx reverse proxy.
+- Token dashboard views.
+- Filled EXPLAIN ANALYZE benchmark results.
+- Passing GitHub Actions CI run evidence.
+- Release tag `v1.0.0`.
+- Live AWS EC2 deployment with public URL.
+- HTTPS and domain setup.
 - ERC-20 token transfer extraction.

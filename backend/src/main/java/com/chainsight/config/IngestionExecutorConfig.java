@@ -5,8 +5,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -46,14 +44,13 @@ public class IngestionExecutorConfig {
     }
 
     @Bean(name = "jobCoordinatorExecutor", destroyMethod = "shutdown")
-    public ExecutorService jobCoordinatorExecutor() {
-        AtomicInteger threadNumber = new AtomicInteger(1);
-        return Executors.newCachedThreadPool(runnable -> {
-            Thread thread = new Thread(runnable);
-            thread.setName("job-coordinator-" + threadNumber.getAndIncrement());
-            thread.setDaemon(true);
-            return thread;
-        });
+    public Executor jobCoordinatorExecutor(
+            @Value("${ethereum.ingestion.job-coordinator.core-pool-size}") int corePoolSize,
+            @Value("${ethereum.ingestion.job-coordinator.max-pool-size}") int maxPoolSize,
+            @Value("${ethereum.ingestion.job-coordinator.queue-capacity}") int queueCapacity
+    ) {
+        validateExecutorSettings("ethereum.ingestion.job-coordinator", corePoolSize, maxPoolSize, queueCapacity);
+        return newBoundedExecutor("job-coordinator-", corePoolSize, maxPoolSize, queueCapacity);
     }
 
     private Executor newBoundedExecutor(String threadNamePrefix, int corePoolSize, int maxPoolSize, int queueCapacity) {

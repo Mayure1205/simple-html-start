@@ -19,7 +19,7 @@ Returns Spring Boot Actuator health for the backend and connected dependencies.
 
 ## Ingestion
 
-Sprint 2 implements a sequential, checkpoint-aware ingestion path. Later sprints will make this asynchronous and concurrent.
+The backend implements checkpoint-aware ingestion. Single-block ingestion runs synchronously. Range ingestion is accepted asynchronously: the API returns a job id with `RUNNING`, and the background job performs bounded parallel RPC extraction while database persistence remains ordered by block number.
 
 ### `POST /api/v1/ingestion/blocks/{blockNumber}`
 
@@ -40,11 +40,11 @@ Response:
 
 ### `POST /api/v1/ingestion/jobs`
 
-Starts a small sequential block-range ingestion job. The range is limited by `ethereum.ingestion.max-range-size` while the project is still sequential.
+Accepts a block-range ingestion job. The range is limited by `ethereum.ingestion.max-range-size`.
 
 If the checkpoint is already inside the requested range, the service resumes from `checkpoint + 1` and reports how many requested blocks were skipped.
 
-The current backend allows one active range ingestion job per chain per application instance. A later Redis lock will extend this protection across multiple running instances.
+The backend allows one active range ingestion job per chain. A Redis lock protects multiple running instances, and an in-memory guard protects the current JVM.
 
 Request:
 
@@ -66,10 +66,10 @@ Response `202 Accepted`:
   "endBlock": 22000005,
   "resumeFromBlock": 22000000,
   "skippedBlocks": 0,
-  "processedBlocks": 6,
-  "transactionsInserted": 840,
+  "processedBlocks": 0,
+  "transactionsInserted": 0,
   "failedBlocks": 0,
-  "status": "COMPLETED"
+  "status": "RUNNING"
 }
 ```
 
@@ -83,12 +83,14 @@ Restart example after checkpoint `22000002`:
   "endBlock": 22000005,
   "resumeFromBlock": 22000003,
   "skippedBlocks": 3,
-  "processedBlocks": 3,
-  "transactionsInserted": 420,
+  "processedBlocks": 0,
+  "transactionsInserted": 0,
   "failedBlocks": 0,
-  "status": "COMPLETED"
+  "status": "RUNNING"
 }
 ```
+
+Use `GET /api/v1/ingestion/jobs/{jobId}` to check whether the background job later becomes `COMPLETED` or `FAILED`.
 
 ### `GET /api/v1/ingestion/jobs/{jobId}`
 
@@ -212,15 +214,59 @@ Response:
 
 ### `GET /api/v1/analytics/wallets/{address}/transactions?chainId=1&page=0&size=50`
 
-Returns indexed sent and received transactions for a wallet.
+Returns indexed sent and received native transactions for a wallet. The backend normalizes the wallet address to lowercase and returns `direction` as `SENT` or `RECEIVED`.
+
+Response:
+
+```json
+{
+  "chainId": 1,
+  "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "page": 0,
+  "size": 50,
+  "totalTransactions": 1,
+  "totalPages": 1,
+  "transactions": [
+    {
+      "transactionHash": "0xtx1",
+      "blockNumber": 22000001,
+      "direction": "SENT",
+      "counterpartyAddress": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "fromAddress": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "toAddress": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "valueWei": "1000000000000000000",
+      "gasPriceWei": "32000000000",
+      "gasUsed": 21000,
+      "status": 1,
+      "blockTimestamp": "2026-06-12T09:00:00Z"
+    }
+  ]
+}
+```
 
 ### `GET /api/v1/analytics/wallets/{address}/summary?chainId=1`
 
 Returns sent value, received value, net flow, and transaction counts.
 
+Response:
+
+```json
+{
+  "chainId": 1,
+  "address": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sentCount": 3,
+  "receivedCount": 5,
+  "sentValueWei": "700000000000000000",
+  "receivedValueWei": "2000000000000000000",
+  "netFlowWei": "1300000000000000000",
+  "firstActivityAt": "2026-06-01T00:00:00Z",
+  "lastActivityAt": "2026-06-12T09:00:00Z"
+}
+```
+
 ### `GET /api/v1/analytics/wallets/top?chainId=1&from=2026-06-01&to=2026-06-12&metric=receivedValue&limit=25`
 
-Returns top indexed wallets for a metric.
+Planned, not implemented. Will return top indexed wallets for a metric.
 
 ## Token Analytics
 

@@ -6,15 +6,22 @@ Ethereum is the first data source because it is publicly accessible and generate
 
 ## Current Status
 
-Sprint 0 foundation is in progress:
+Sprint 8 evidence and release readiness is in progress:
 
-- Spring Boot backend skeleton
-- PostgreSQL and Redis local Docker Compose
-- Flyway-managed warehouse schema
-- Evidence ledger for interview claims
-- Initial architecture, database, API, and runbook documentation
+- Web3j block and receipt ingestion
+- Checkpoint-aware range ingestion with restart-safety tests
+- Async range jobs with bounded block and receipt executor pools
+- PostgreSQL warehouse schema managed by Flyway
+- Network analytics APIs with PostgreSQL window functions
+- Wallet transaction-history and summary analytics APIs
+- Redis cache, distributed ingestion lock, and token-bucket API rate limiter
+- Resilience4j circuit breaker around Ethereum RPC calls
+- Static operations dashboard served by Spring Boot, including wallet lookup
+- Production Docker Compose and Nginx deployment artifacts
+- GitHub Actions backend CI workflow file
+- Benchmark report template and release checklist
 
-The next implementation milestone is Sprint 1: build the Ethereum RPC adapter, fetch blocks through Web3j, transform block data, and persist blocks plus native transactions.
+Live AWS hosting, passing remote CI evidence, benchmark measurements, top-wallet analytics, token analytics, and HTTPS are still future work.
 
 ## Tech Stack
 
@@ -73,6 +80,12 @@ $env:ETH_RPC_URL = "https://your-provider-url"
 
 Do not commit `.env` files, API keys, RPC URLs with secrets, database dumps, or generated local data.
 
+Open the local dashboard after the backend starts:
+
+```text
+http://localhost:8080/dashboard/index.html
+```
+
 ## Documentation
 
 - [Product Requirements](product-requirements.md)
@@ -81,6 +94,8 @@ Do not commit `.env` files, API keys, RPC URLs with secrets, database dumps, or 
 - [API Contract](docs/api-contract.md)
 - [Runbook](docs/runbook.md)
 - [Evidence Ledger](docs/interview-evidence.md)
+- [Benchmark Report](docs/benchmark-report.md)
+- [Release Checklist](docs/release-checklist.md)
 - [ADR-001: Modular Monolith First](docs/adrs/ADR-001-start-with-modular-monolith.md)
 
 ## Engineering Positioning
@@ -91,7 +106,7 @@ Use this framing in interviews:
 
 ## Git Workflow
 
-- Use feature branches.
+- Current local workflow: commit focused changes directly on `main`.
 - Use conventional commits, for example `feat(ingestion): add block persistence`.
-- Keep PRs focused on one milestone.
+- Keep each commit focused on one milestone.
 - Update `docs/interview-evidence.md` whenever a claim becomes demonstrable in code, tests, benchmarks, CI, or deployment.

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChainSight Dashboard</title>
+  <link rel="stylesheet" href="./dashboard.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Dashboard navigation">
+      <div class="brand">
+        <div class="brand-mark">CS</div>
+        <div>
+          <h1>ChainSight</h1>
+          <p>Warehouse Ops</p>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <a href="#overview" class="active">Overview</a>
+        <a href="#ingestion">Ingestion</a>
+        <a href="#analytics">Analytics</a>
+        <a href="#wallets">Wallets</a>
+        <a href="#failures">Failures</a>
+      </nav>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Ethereum Mainnet</p>
+          <h2>Historical Data Warehouse</h2>
+        </div>
+        <div class="topbar-actions">
+          <label class="api-base">
+            <span>API</span>
+            <input id="apiBaseInput" type="text" autocomplete="off">
+          </label>
+          <button id="refreshButton" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section id="overview" class="metrics-grid" aria-label="Ingestion status">
+        <article class="metric-card">
+          <span>Checkpoint</span>
+          <strong id="lastProcessedBlock">-</strong>
+        </article>
+        <article class="metric-card">
+          <span>Indexed Blocks</span>
+          <strong id="indexedBlocks">-</strong>
+        </article>
+        <article class="metric-card">
+          <span>Transactions</span>
+          <strong id="indexedTransactions">-</strong>
+        </article>
+        <article class="metric-card warning">
+          <span>Failed Blocks</span>
+          <strong id="failedBlockCount">-</strong>
+        </article>
+      </section>
+
+      <section class="split-grid">
+        <section id="ingestion" class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Range Job</p>
+              <h3>Ingestion Control</h3>
+            </div>
+            <span id="jobStatusBadge" class="badge">Idle</span>
+          </div>
+
+          <form id="ingestionForm" class="form-grid">
+            <label>
+              <span>Chain ID</span>
+              <input id="chainIdInput" type="number" min="1" value="1">
+            </label>
+            <label>
+              <span>Start Block</span>
+              <input id="startBlockInput" type="number" min="0" placeholder="19999000">
+            </label>
+            <label>
+              <span>End Block</span>
+              <input id="endBlockInput" type="number" min="0" placeholder="20000000">
+            </label>
+            <button type="submit">Start Job</button>
+          </form>
+
+          <div class="job-summary">
+            <div>
+              <span>Job</span>
+              <strong id="jobId">-</strong>
+            </div>
+            <div>
+              <span>Resume From</span>
+              <strong id="resumeFromBlock">-</strong>
+            </div>
+            <div>
+              <span>Processed</span>
+              <strong id="processedBlocks">-</strong>
+            </div>
+            <div>
+              <span>Inserted Tx</span>
+              <strong id="transactionsInserted">-</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="analytics" class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Window Functions</p>
+              <h3>Daily Network Metrics</h3>
+            </div>
+          </div>
+
+          <form id="analyticsForm" class="date-row">
+            <label>
+              <span>From</span>
+              <input id="fromDateInput" type="date">
+            </label>
+            <label>
+              <span>To</span>
+              <input id="toDateInput" type="date">
+            </label>
+            <button type="submit">Load</button>
+          </form>
+
+          <div class="chart-wrap">
+            <canvas id="dailyChart" width="900" height="300" aria-label="Daily transaction chart"></canvas>
+          </div>
+        </section>
+      </section>
+
+      <section class="split-grid lower">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Ranked By Value</p>
+              <h3>Largest Transactions</h3>
+            </div>
+            <label class="compact-input">
+              <span>Limit</span>
+              <input id="limitInput" type="number" min="1" max="100" value="10">
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Hash</th>
+                  <th>Block</th>
+                  <th>Value Wei</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="largestTransactionsBody">
+                <tr><td colspan="5" class="empty-cell">No rows</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="failures" class="panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Retry Queue</p>
+              <h3>Failed Blocks</h3>
+            </div>
+            <button id="failedBlocksButton" type="button">Reload</button>
+          </div>
+          <div id="failedBlocksList" class="failed-list">
+            <p class="empty-state">No failed blocks loaded</p>
+          </div>
+        </section>
+      </section>
+
+      <section id="wallets" class="panel wallet-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Address Analytics</p>
+            <h3>Wallet Activity</h3>
+          </div>
+        </div>
+
+        <form id="walletForm" class="wallet-form">
+          <label class="wallet-address-field">
+            <span>Wallet Address</span>
+            <input
+              id="walletAddressInput"
+              type="text"
+              autocomplete="off"
+              placeholder="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            >
+          </label>
+          <label class="compact-input">
+            <span>Size</span>
+            <input id="walletSizeInput" type="number" min="1" max="100" value="10">
+          </label>
+          <button type="submit">Load Wallet</button>
+        </form>
+
+        <div class="wallet-summary-grid">
+          <div>
+            <span>Sent</span>
+            <strong id="walletSentCount">-</strong>
+            <small id="walletSentValue">-</small>
+          </div>
+          <div>
+            <span>Received</span>
+            <strong id="walletReceivedCount">-</strong>
+            <small id="walletReceivedValue">-</small>
+          </div>
+          <div>
+            <span>Net Flow Wei</span>
+            <strong id="walletNetFlow">-</strong>
+          </div>
+          <div>
+            <span>Last Activity</span>
+            <strong id="walletLastActivity">-</strong>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Direction</th>
+                <th>Hash</th>
+                <th>Counterparty</th>
+                <th>Block</th>
+                <th>Value Wei</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="walletTransactionsBody">
+              <tr><td colspan="6" class="empty-cell">No wallet loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="activity-band" aria-label="Activity log">
+        <div>
+          <p class="eyebrow">Activity</p>
+          <h3>Latest Events</h3>
+        </div>
+        <ul id="activityLog"></ul>
+      </section>
+    </main>
+  </div>
+
+  <script src="./dashboard.js"></script>
+</body>
+</html>

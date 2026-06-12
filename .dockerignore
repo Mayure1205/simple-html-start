@@ -1,0 +1,10 @@
+.git
+.idea
+.vscode
+target
+backend/target
+*.log
+.env
+.env.*
+!infra/env.prod.example
+node_modules
