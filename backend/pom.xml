@@ -15,7 +15,7 @@
     <description>ChainSight - Concurrent Historical Data Warehouse</description>
     <properties>
         <java.version>21</java.version>
-        <web3j.version>4.11.0</web3j.version>
+        <web3j.version>4.14.0</web3j.version>
         <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
     <dependencies>

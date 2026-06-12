@@ -4,7 +4,10 @@ This document tracks verifiable engineering decisions and their implementation w
 
 | Claim | Proof (File / Location) | Status |
 |---|---|---|
-| Set up a PostgreSQL & Redis data warehouse | `infra/docker-compose.local.yml`, `db/migration/V1__init_schema.sql` | `DONE` |
+| Set up local PostgreSQL and Redis dependencies | `infra/docker-compose.local.yml` | `DONE` |
+| Created initial Flyway warehouse schema | `backend/src/main/resources/db/migration/V1__init_schema.sql` | `DONE` |
+| Documented modular-monolith architecture | `docs/architecture.md`, `docs/adrs/ADR-001-start-with-modular-monolith.md` | `DONE` |
+| Defined MVP API contract | `docs/api-contract.md` | `DONE` |
 | Used concurrent extraction (ThreadPoolExecutor) | | `TODO` |
 | Implemented CompletableFuture pipeline | | `TODO` |
 | Built restart-safe ACID checkpointing | | `TODO` |
