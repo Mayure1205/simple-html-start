@@ -12,7 +12,7 @@ ChainSight is a backend data engineering project. It takes Ethereum block data f
 
 Technical interview answer:
 
-ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented backend currently supports Web3j-based block and transaction receipt fetching, bounded concurrent block extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, Flyway-managed PostgreSQL schema, and network analytics APIs using PostgreSQL window functions.
+ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented system currently supports Web3j-based block and transaction receipt fetching, bounded concurrent block extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, network analytics APIs using PostgreSQL window functions, Redis-backed cache/locks/rate limiting, Resilience4j circuit breaker protection around RPC calls, and a local operational dashboard served by Spring Boot.
 
 ### 2-Minute Explanation
 
@@ -22,7 +22,7 @@ Ethereum is not the product here. It is the data source. The real engineering pr
 
 Technical interview answer:
 
-The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds a bounded custom `ThreadPoolExecutor` and `CompletableFuture` scheduling so multiple blocks can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions.
+The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds a bounded custom `ThreadPoolExecutor` and `CompletableFuture` scheduling so multiple blocks can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions. Sprint 5 adds Redis-backed analytics caching, a Redis distributed ingestion lock, a Redis token-bucket API rate limiter, and Resilience4j circuit breaker wrapping around Ethereum RPC calls. Sprint 6 adds a static dashboard for operating and demoing the implemented ingestion and analytics APIs.
 
 ## Architecture Flow
 
@@ -63,6 +63,13 @@ Important implemented files:
 | Network analytics API | `backend/src/main/java/com/chainsight/analytics/controller/NetworkAnalyticsController.java` |
 | Network analytics service | `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsService.java` |
 | Network analytics repository | `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java` |
+| Redis ingestion lock | `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java` |
+| Redis token bucket | `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java` |
+| API rate limit filter | `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java` |
+| Dashboard HTML | `backend/src/main/resources/static/dashboard/index.html` |
+| Dashboard CSS | `backend/src/main/resources/static/dashboard/dashboard.css` |
+| Dashboard JavaScript | `backend/src/main/resources/static/dashboard/dashboard.js` |
+| Sprint roadmap | `docs/sprint-roadmap.md` |
 | Global errors | `backend/src/main/java/com/chainsight/exception/GlobalExceptionHandler.java` |
 | Schema | `backend/src/main/resources/db/migration/V1__init_schema.sql` |
 | Unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java` |
@@ -369,6 +376,133 @@ Evidence:
 - API contract: `docs/api-contract.md`.
 - Test added: `NetworkAnalyticsServiceTest.java`.
 
+### Sprint 5 - Redis And Resilience
+
+Status:
+
+- Implemented in code.
+- Unit tests added but not run in this turn because we are avoiding heavier commands.
+- Runtime verification with real Redis and real RPC is still pending.
+
+What was built:
+
+- Redis cache for network analytics responses.
+- Redis distributed lock for range ingestion.
+- Redis token-bucket rate limiter for ingestion and analytics APIs.
+- Resilience4j circuit breaker around Ethereum block and receipt RPC calls.
+
+Why it was needed:
+
+- The backend depends on external systems: Ethereum RPC can fail, Redis can protect shared runtime state, and public APIs can be called repeatedly. Sprint 5 adds resilience controls so the application behaves more like a production backend.
+
+Where it is used:
+
+- Analytics cache: `backend/src/main/java/com/chainsight/analytics/service/NetworkAnalyticsCacheService.java`
+- Distributed lock: `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java`
+- Lock usage: `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`
+- Token bucket: `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java`
+- Rate-limit filter: `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java`
+- Circuit breaker: `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java`
+- Configuration: `backend/src/main/resources/application.yml`
+
+Java/Spring/Redis concepts:
+
+- `StringRedisTemplate`.
+- Redis `SETNX` style locking with TTL.
+- Lua script for safe lock release.
+- Redis-backed token bucket.
+- Spring `OncePerRequestFilter`.
+- Jackson `ObjectMapper` for cache serialization.
+- Resilience4j `CircuitBreakerRegistry`.
+
+Beginner-friendly explanation:
+
+Redis is used for fast shared state. ChainSight uses it to remember cached analytics results, stop two app instances from ingesting the same chain at once, and limit repeated API calls. The circuit breaker protects the backend when the Ethereum RPC provider starts failing.
+
+Technical interview answer:
+
+Network analytics first checks Redis for a cached response and falls back to PostgreSQL on a cache miss. Range ingestion acquires a Redis lock with TTL before creating the job, and releases it with a Lua script that only deletes the lock if the token matches. The API rate limiter uses a Redis token bucket in a `OncePerRequestFilter` for `/api/v1/ingestion` and `/api/v1/analytics`. Ethereum RPC calls are wrapped by the configured Resilience4j `ethereumRpc` circuit breaker.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Why cache analytics in Redis? | Aggregations can be expensive and repeated often, so Redis avoids unnecessary PostgreSQL reads. |
+| Why use a Redis lock if you already have `ConcurrentHashMap`? | `ConcurrentHashMap` protects one JVM; Redis protects multiple backend instances. |
+| Why release the lock with Lua? | It prevents deleting another instance's lock if the original lock expired and was reacquired. |
+| What is a token bucket? | A rate-limiting algorithm where requests consume tokens and tokens refill over time. |
+| What does the circuit breaker do? | It stops repeatedly calling an unhealthy RPC provider after enough failures. |
+
+Evidence:
+
+- Code: `NetworkAnalyticsCacheService.java`.
+- Code: `RedisIngestionLockService.java`.
+- Code: `RedisTokenBucketRateLimiter.java`.
+- Code: `EthereumRpcAdapter.java`.
+- Tests added: `NetworkAnalyticsServiceTest`, `BlockIngestionServiceTest`, `ApiRateLimitFilterTest`.
+
+### Sprint 6 - Local Operational Dashboard
+
+Status:
+
+- Implemented in code as static assets.
+- Manual browser verification is pending because we did not start the backend or run a browser session in this turn.
+- Future sprint boundaries are recorded in `docs/sprint-roadmap.md`.
+
+What was built:
+
+- Static dashboard served from Spring Boot.
+- Ingestion status cards.
+- Range ingestion form.
+- Network daily-metrics chart.
+- Largest-transactions table.
+- Failed-block list and retry action.
+- Activity log.
+- Responsive layout for desktop and smaller screens.
+
+Why it was needed:
+
+- Interviews and demos need a visual way to operate the ETL system. The dashboard makes the backend easier to explain without building a separate frontend application too early.
+
+Where it is used:
+
+- Dashboard HTML: `backend/src/main/resources/static/dashboard/index.html`
+- Dashboard CSS: `backend/src/main/resources/static/dashboard/dashboard.css`
+- Dashboard JavaScript: `backend/src/main/resources/static/dashboard/dashboard.js`
+- Runbook URL: `docs/runbook.md`
+- Scope control: `docs/sprint-roadmap.md`
+
+Java/Spring/frontend concepts:
+
+- Spring Boot static resource serving.
+- Browser `fetch` API.
+- Canvas chart rendering.
+- Responsive CSS Grid layout.
+- Same-origin API calls when served from the backend.
+
+Beginner-friendly explanation:
+
+The dashboard is a simple control room for the backend. It shows ingestion progress, starts a range job, loads network analytics, lists large transactions, and shows failed blocks that can be retried.
+
+Technical interview answer:
+
+The dashboard is intentionally static and served from `src/main/resources/static`, so it does not introduce a separate Node or React build pipeline yet. It calls the implemented REST APIs on the same origin, renders daily transaction data on a canvas, and keeps Sprint 6 focused on operational visibility rather than frontend architecture.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Why static dashboard instead of React? | It avoids frontend build complexity while proving the backend can be operated visually. |
+| Where is it served from? | Spring Boot static resources under `/dashboard/index.html`. |
+| What APIs does it use? | Ingestion status/jobs/failed-blocks and network analytics endpoints. |
+| Is this production UI complete? | No. It is a local operational dashboard for demos and development. |
+
+Evidence:
+
+- Code: `backend/src/main/resources/static/dashboard`.
+- Runbook: `docs/runbook.md`.
+- Roadmap: `docs/sprint-roadmap.md`.
+
 ## Core Java Concepts Used
 
 | Concept | Where Used | Explanation |
@@ -384,6 +518,8 @@ Evidence:
 | `CompletableFuture` | `BlockIngestionService.scheduleBlockExtraction(...)` | Schedules RPC fetches concurrently. |
 | `LocalDate` | `NetworkAnalyticsController` | Accepts date-range query parameters for analytics. |
 | `BigDecimal` | Analytics DTOs and repository mapping | Represents SQL numeric analytics values safely. |
+| `UUID` | `RedisIngestionLockService` | Creates unique lock tokens for safe distributed lock release. |
+| Browser `fetch` | `dashboard.js` | Calls backend APIs from the local dashboard. |
 
 ## Spring Boot Concepts Used
 
@@ -401,6 +537,8 @@ Evidence:
 | `@Qualifier` | `BlockIngestionService` constructor | Injects the named block extraction executor. |
 | `@RestController` for analytics | `NetworkAnalyticsController` | Exposes network analytics endpoints. |
 | `@DateTimeFormat` | `NetworkAnalyticsController` | Parses ISO date request parameters. |
+| `OncePerRequestFilter` | `ApiRateLimitFilter` | Applies rate limiting before controllers run. |
+| Static resources | `backend/src/main/resources/static/dashboard` | Serves the local dashboard from Spring Boot. |
 
 ## PostgreSQL And SQL Concepts Used
 
@@ -441,7 +579,11 @@ Implemented now:
 
 - Redis is present in Docker Compose, but application Redis logic is not implemented yet.
 - Docker Compose exists for local PostgreSQL and Redis.
-- Resilience4j dependency/config exists, but RPC calls are not wrapped yet.
+- Redis analytics cache is implemented.
+- Redis distributed ingestion lock is implemented.
+- Redis token bucket API rate limiter is implemented.
+- Resilience4j circuit breaker wraps Ethereum RPC calls.
+- Static dashboard is served by Spring Boot.
 
 Do not claim yet:
 
@@ -527,6 +669,36 @@ Evidence:
 - `BlockIngestionService.scheduleBlockExtraction(...)`
 - `BlockIngestionService.persistFetchedBlock(...)`
 
+### Redis For Shared Runtime State
+
+Beginner-friendly:
+
+Redis is used when the backend needs quick shared memory outside the Java process.
+
+Technical answer:
+
+The project uses Redis for analytics caching, distributed ingestion locking, and token-bucket rate limiting. This separates temporary runtime state from PostgreSQL, which remains the durable warehouse.
+
+Evidence:
+
+- `NetworkAnalyticsCacheService`
+- `RedisIngestionLockService`
+- `RedisTokenBucketRateLimiter`
+
+### Scope Control
+
+Beginner-friendly:
+
+The roadmap keeps the project from growing in every direction at once.
+
+Technical answer:
+
+`docs/sprint-roadmap.md` separates implemented Sprint 6 dashboard work from planned Sprint 7 deployment and Sprint 8 evidence tasks. This prevents claiming AWS, CI/CD, benchmarks, or advanced frontend work before they exist.
+
+Evidence:
+
+- `docs/sprint-roadmap.md`
+
 ## Failure Scenarios Handled
 
 | Scenario | Current Handling | Evidence |
@@ -540,6 +712,11 @@ Evidence:
 | Unsupported analytics chain ID | Rejects request | `NetworkAnalyticsServiceTest` |
 | Invalid analytics date range | Rejects request | `NetworkAnalyticsServiceTest` |
 | Analytics limit too large | Rejects request | `NetworkAnalyticsServiceTest` |
+| Analytics cache miss | Falls back to PostgreSQL and writes Redis cache | `NetworkAnalyticsService` |
+| Another instance holds ingestion lock | Rejects range ingestion before creating job | `RedisIngestionLockService`, `BlockIngestionServiceTest` |
+| API token bucket empty | Returns HTTP 429 | `ApiRateLimitFilterTest` |
+| RPC provider unhealthy | Resilience4j circuit breaker wraps calls | `EthereumRpcAdapter` |
+| Dashboard API failure | Shows activity-log error instead of crashing the page | `dashboard.js` |
 | RPC block missing | Throws `RpcFetchException` | `EthereumRpcAdapter` |
 | RPC receipt fetch fails | Throws `RpcFetchException` and stops the block ingestion | `EthereumRpcAdapter.fetchTransactionReceipt(...)` |
 | Block fails during range ingestion | Records row in `failed_blocks` and marks job failed | `BlockIngestionService`, `BlockJdbcRepository` |
@@ -561,23 +738,27 @@ Evidence:
 | What is the Sprint 3 concurrency model? | Parallel RPC extraction with ordered database persistence. |
 | What analytics are implemented? | Network daily metrics and largest native transactions. |
 | Which SQL window functions are used? | `LAG()` for previous-day comparison and `RANK()` for rankings. |
+| Where is Redis used? | Analytics cache, ingestion distributed lock, and API token bucket. |
+| Where is Resilience4j used? | Ethereum block and receipt RPC calls in `EthereumRpcAdapter`. |
+| What does the dashboard prove? | The backend can be operated and demoed visually through implemented APIs. |
 | Why not JPA for transaction rows? | JPA is useful for metadata, but batch ETL inserts need direct SQL control. |
 | What extra value do receipts add? | They add execution status and actual gas used, which makes the warehouse useful for gas and failure analytics later. |
 | What is proven today? | Service resume behavior and validation are unit-tested. PostgreSQL integration tests are written but need Docker running to execute. |
-| What is not implemented yet? | Redis caching/locks, circuit breaker wrapping, wallet/token analytics, dashboard, AWS, CI/CD. |
+| What is not implemented yet? | Retry with backoff, wallet/token analytics, AWS, CI/CD, and benchmark evidence. |
 
 ## Honest Limitations
 
 - RPC extraction is concurrent, but database persistence is still ordered and not parallel.
-- The active job guard is in-memory only, so it does not protect multiple backend instances yet.
+- Cross-instance locking depends on Redis availability and still needs runtime verification.
 - Analytics currently covers network-level views only.
 - `EXPLAIN ANALYZE` benchmarks are not captured yet.
+- Redis and circuit breaker runtime behavior still needs local Docker/manual verification.
+- The dashboard is static and local; it is not authenticated, deployed, or manually browser-verified yet.
 - Token transfer extraction is not implemented yet.
 - Transaction receipts are fetched sequentially today, so this is correct but not optimized for high-throughput ingestion yet.
 - Redis is configured locally but not used in application logic yet.
 - Circuit breaker dependency exists but RPC calls are not wrapped yet.
 - Testcontainers integration tests require Docker Desktop to be running.
-- No frontend dashboard yet.
 - No AWS deployment or CI pipeline yet.
 
 ## Resume Bullet
@@ -592,6 +773,9 @@ including Web3j block fetching, bounded CompletableFuture-based range extraction
 checkpoint-aware ordered persistence,
 transaction receipt mapping for status and gas-used fields,
 PostgreSQL window-function network analytics APIs,
+Redis-backed analytics caching, Redis distributed ingestion locking,
+Redis token-bucket API rate limiting, Resilience4j RPC circuit breaker wrapping,
+and a Spring Boot-served local operations dashboard,
 in-memory same-chain job overlap protection,
 Flyway-managed PostgreSQL schema, JdbcTemplate batch inserts, idempotent
 database writes with unique constraints, and unit/Testcontainers tests for
@@ -606,8 +790,8 @@ restart-safety scenarios.
 - Resilience4j circuit breaker around RPC calls.
 - Wallet analytics APIs.
 - Token analytics APIs.
+- Wallet/token dashboard views.
 - EXPLAIN ANALYZE benchmark report.
-- Dashboard.
 - GitHub Actions CI.
 - AWS EC2 deployment.
 - Nginx reverse proxy.
