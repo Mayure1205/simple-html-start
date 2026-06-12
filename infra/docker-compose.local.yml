@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chainsight-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: chainsight
+      POSTGRES_USER: chainsight_user
+      POSTGRES_PASSWORD: chainsight_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U chainsight_user -d chainsight" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chainsight_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: chainsight-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chainsight_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  chainsight_network:
+    driver: bridge
