@@ -29,6 +29,12 @@ Check health:
 Invoke-RestMethod http://localhost:8080/actuator/health
 ```
 
+Open the local dashboard:
+
+```text
+http://localhost:8080/dashboard/index.html
+```
+
 ## Local Shutdown
 
 Stop containers without deleting volumes:
@@ -107,7 +113,7 @@ Then start dependencies again.
 
 ### RPC provider fails
 
-Use another provider URL through `ETH_RPC_URL`. Later sprints will add circuit breaker, retry, and failed-block handling.
+Use another provider URL through `ETH_RPC_URL`. Circuit breaker and failed-block handling are implemented; retry with backoff is still planned.
 
 ## Evidence Discipline
 

@@ -27,6 +27,7 @@ This document tracks verifiable engineering decisions and their implementation w
 | Wrapped RPC calls in Circuit Breaker (Resilience4j) | `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java`, `backend/src/main/resources/application.yml` | `CODED - RUNTIME VERIFY PENDING` |
 | Used Redis distributed lock to prevent overlapping | `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java`, `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java` | `CODED - TESTS ADDED, RUN PENDING` |
 | Rate-limited APIs via Token Bucket (Redis) | `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java`, `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java` | `CODED - TESTS ADDED, RUN PENDING` |
+| Built local operational dashboard | `backend/src/main/resources/static/dashboard/index.html`, `backend/src/main/resources/static/dashboard/dashboard.css`, `backend/src/main/resources/static/dashboard/dashboard.js` | `CODED - MANUAL BROWSER VERIFY PENDING` |
 | Built a comprehensive test suite (Testcontainers) | | `TODO` |
 | Set up GitHub Actions CI pipeline | | `TODO` |
 | Hosted on AWS EC2 via Docker Compose | | `TODO` |
