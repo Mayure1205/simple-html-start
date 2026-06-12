@@ -92,9 +92,7 @@ UNIQUE (chain_id, token_address, transaction_hash, log_index)
 
 ## Git Discipline (NON-NEGOTIABLE)
 - Conventional commits: `feat(ingestion): add block range extractor`
-- Feature branches: `feat/21-block-range-ingestion`
-- PRs even when solo — review your own diff after a break
-- Squash merge into main
+- Commit directly to main branch. DO NOT create feature branches.
 
 ## Sprint Plan (Summary)
 - **Sprint 0**: Repo setup, docs, Docker Compose, first Flyway migration
