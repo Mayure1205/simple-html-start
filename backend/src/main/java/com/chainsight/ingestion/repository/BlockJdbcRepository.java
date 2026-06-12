@@ -1,6 +1,7 @@
 package com.chainsight.ingestion.repository;
 
 import com.chainsight.ingestion.dto.FailedBlockResponse;
+import com.chainsight.ingestion.dto.IngestionJobStatusResponse;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -126,6 +127,30 @@ public class BlockJdbcRepository {
                 chainId,
                 status
         );
+    }
+
+    public IngestionJobStatusResponse findJobById(long jobId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT id, chain_id, start_block, end_block, status, started_at, completed_at, failure_reason " +
+                    "FROM ingestion_jobs WHERE id = ?",
+                    (rs, rowNum) -> new IngestionJobStatusResponse(
+                            rs.getLong("id"),
+                            rs.getLong("chain_id"),
+                            BigInteger.valueOf(rs.getLong("start_block")),
+                            BigInteger.valueOf(rs.getLong("end_block")),
+                            rs.getString("status"),
+                            rs.getTimestamp("started_at").toInstant(),
+                            rs.getTimestamp("completed_at") == null
+                                    ? null
+                                    : rs.getTimestamp("completed_at").toInstant(),
+                            rs.getString("failure_reason")
+                    ),
+                    jobId
+            );
+        } catch (EmptyResultDataAccessException ex) {
+            throw new IllegalArgumentException("Ingestion job " + jobId + " was not found");
+        }
     }
 
     public int insertBlock(BlockData block, long chainId) {

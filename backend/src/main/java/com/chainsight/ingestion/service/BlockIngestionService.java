@@ -3,6 +3,7 @@ package com.chainsight.ingestion.service;
 import com.chainsight.ingestion.dto.FailedBlockResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.IngestionJobResponse;
+import com.chainsight.ingestion.dto.IngestionJobStatusResponse;
 import com.chainsight.ingestion.dto.IngestionStatusResponse;
 import com.chainsight.ingestion.dto.StartIngestionRequest;
 import com.chainsight.ingestion.model.BlockData;
@@ -18,6 +19,7 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,6 +33,7 @@ public class BlockIngestionService {
     private final TransactionTemplate transactionTemplate;
     private final long ethereumChainId;
     private final int maxRangeSize;
+    private final ConcurrentHashMap<Long, Long> activeRangeJobsByChain = new ConcurrentHashMap<>();
 
     public BlockIngestionService(
             EthereumRpcAdapter rpcAdapter,
@@ -68,15 +71,19 @@ public class BlockIngestionService {
 
     public IngestionJobResponse ingestRange(StartIngestionRequest request) {
         validateRequest(request);
+        acquireRangeJobSlot(request.chainId());
 
-        long jobId = repository.createJob(request.chainId(), request.startBlock(), request.endBlock());
+        long jobId = 0;
         long processedBlocks = 0;
         long insertedTransactions = 0;
-        long lastProcessedBlock = repository.getLastProcessedBlock(request.chainId());
-        BigInteger resumeFromBlock = nextBlockToProcess(request.startBlock(), lastProcessedBlock);
-        long skippedBlocks = skippedBlockCount(request.startBlock(), resumeFromBlock);
 
         try {
+            jobId = repository.createJob(request.chainId(), request.startBlock(), request.endBlock());
+            activeRangeJobsByChain.replace(request.chainId(), 0L, jobId);
+
+            long lastProcessedBlock = repository.getLastProcessedBlock(request.chainId());
+            BigInteger resumeFromBlock = nextBlockToProcess(request.startBlock(), lastProcessedBlock);
+            long skippedBlocks = skippedBlockCount(request.startBlock(), resumeFromBlock);
             BigInteger currentBlock = resumeFromBlock;
             while (currentBlock.compareTo(request.endBlock()) <= 0) {
                 try {
@@ -104,8 +111,12 @@ public class BlockIngestionService {
                     "COMPLETED"
             );
         } catch (RuntimeException ex) {
-            repository.markJobFailed(jobId, ex.getMessage());
+            if (jobId > 0) {
+                repository.markJobFailed(jobId, ex.getMessage());
+            }
             throw ex;
+        } finally {
+            releaseRangeJobSlot(request.chainId(), jobId);
         }
     }
 
@@ -113,6 +124,15 @@ public class BlockIngestionService {
         validateSupportedChain(chainId);
         validateFailedBlockStatus(status);
         return repository.findFailedBlocks(chainId, status);
+    }
+
+    public IngestionJobStatusResponse getJob(long jobId) {
+        if (jobId <= 0) {
+            throw new IllegalArgumentException("jobId must be positive");
+        }
+        IngestionJobStatusResponse response = repository.findJobById(jobId);
+        validateSupportedChain(response.chainId());
+        return response;
     }
 
     public IngestionResult retryFailedBlock(long chainId, BigInteger blockNumber) {
@@ -138,6 +158,24 @@ public class BlockIngestionService {
     private long skippedBlockCount(BigInteger requestedStartBlock, BigInteger resumeFromBlock) {
         BigInteger skippedBlocks = resumeFromBlock.subtract(requestedStartBlock);
         return skippedBlocks.max(BigInteger.ZERO).longValueExact();
+    }
+
+    private void acquireRangeJobSlot(long chainId) {
+        Long activeJobId = activeRangeJobsByChain.putIfAbsent(chainId, 0L);
+        if (activeJobId != null) {
+            String jobDescription = activeJobId == 0L ? "starting" : String.valueOf(activeJobId);
+            throw new IllegalArgumentException(
+                    "Ingestion job " + jobDescription + " is already running for chainId " + chainId
+            );
+        }
+    }
+
+    private void releaseRangeJobSlot(long chainId, long jobId) {
+        if (jobId > 0) {
+            activeRangeJobsByChain.remove(chainId, jobId);
+            return;
+        }
+        activeRangeJobsByChain.remove(chainId, 0L);
     }
 
     public IngestionStatusResponse getStatus(long chainId) {

@@ -9,11 +9,13 @@ import org.springframework.stereotype.Service;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.methods.response.EthBlock;
+import org.web3j.protocol.core.methods.response.TransactionReceipt;
 
 import java.io.IOException;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -65,6 +67,7 @@ public class EthereumRpcAdapter {
     }
 
     private TransactionData mapToTransactionData(EthBlock.TransactionObject tx) {
+        Optional<TransactionReceipt> receipt = fetchTransactionReceipt(tx.getHash());
         return new TransactionData(
                 tx.getBlockNumber(),
                 tx.getHash(),
@@ -72,9 +75,28 @@ public class EthereumRpcAdapter {
                 normalizeAddress(tx.getTo()),
                 tx.getValue(),
                 tx.getGasPrice(),
-                null,
-                null
+                receipt.map(TransactionReceipt::getGasUsed)
+                        .map(BigInteger::longValueExact)
+                        .orElse(null),
+                receipt.map(this::mapReceiptStatus).orElse(null)
         );
+    }
+
+    private Optional<TransactionReceipt> fetchTransactionReceipt(String transactionHash) {
+        try {
+            return web3j.ethGetTransactionReceipt(transactionHash)
+                    .send()
+                    .getTransactionReceipt();
+        } catch (IOException e) {
+            throw new RpcFetchException("Failed to fetch receipt for transaction " + transactionHash, e);
+        }
+    }
+
+    private Integer mapReceiptStatus(TransactionReceipt receipt) {
+        if (receipt.getStatus() == null) {
+            return null;
+        }
+        return receipt.isStatusOK() ? 1 : 0;
     }
 
     private String normalizeAddress(String address) {

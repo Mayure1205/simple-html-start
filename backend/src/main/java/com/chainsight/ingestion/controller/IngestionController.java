@@ -3,6 +3,7 @@ package com.chainsight.ingestion.controller;
 import com.chainsight.ingestion.dto.FailedBlockResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.IngestionJobResponse;
+import com.chainsight.ingestion.dto.IngestionJobStatusResponse;
 import com.chainsight.ingestion.dto.IngestionStatusResponse;
 import com.chainsight.ingestion.dto.StartIngestionRequest;
 import com.chainsight.ingestion.service.BlockIngestionService;
@@ -39,6 +40,11 @@ public class IngestionController {
     public ResponseEntity<IngestionJobResponse> ingestRange(@Valid @RequestBody StartIngestionRequest request) {
         IngestionJobResponse response = ingestionService.ingestRange(request);
         return ResponseEntity.accepted().body(response);
+    }
+
+    @GetMapping("/jobs/{jobId}")
+    public ResponseEntity<IngestionJobStatusResponse> getJob(@PathVariable long jobId) {
+        return ResponseEntity.ok(ingestionService.getJob(jobId));
     }
 
     @GetMapping("/status")

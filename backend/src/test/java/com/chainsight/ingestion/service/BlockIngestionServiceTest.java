@@ -1,6 +1,7 @@
 package com.chainsight.ingestion.service;
 
 import com.chainsight.ingestion.dto.IngestionJobResponse;
+import com.chainsight.ingestion.dto.IngestionJobStatusResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.StartIngestionRequest;
 import com.chainsight.exception.RpcFetchException;
@@ -18,6 +19,7 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,6 +29,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -158,6 +161,41 @@ class BlockIngestionServiceTest {
     }
 
     @Test
+    void ingestRangeRejectsOverlappingRangeForSameChain() {
+        runTransactionsImmediately();
+
+        BigInteger blockNumber = BigInteger.valueOf(22_000_006L);
+        StartIngestionRequest request = new StartIngestionRequest(
+                ETHEREUM_CHAIN_ID,
+                blockNumber,
+                blockNumber
+        );
+        AtomicReference<Throwable> overlappingFailure = new AtomicReference<>();
+
+        when(repository.createJob(ETHEREUM_CHAIN_ID, blockNumber, blockNumber)).thenAnswer(invocation -> {
+            try {
+                service.ingestRange(request);
+            } catch (Throwable ex) {
+                overlappingFailure.set(ex);
+            }
+            return 45L;
+        });
+        when(rpcAdapter.fetchBlock(blockNumber)).thenReturn(block(blockNumber, Instant.parse("2026-06-12T09:01:00Z")));
+        when(repository.insertBlock(any(BlockData.class), eq(ETHEREUM_CHAIN_ID))).thenReturn(1);
+        when(repository.insertTransactions(any(), eq(ETHEREUM_CHAIN_ID), any())).thenReturn(2);
+
+        IngestionJobResponse response = service.ingestRange(request);
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(overlappingFailure.get())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Ingestion job starting is already running for chainId 1");
+
+        verify(repository, times(1)).createJob(ETHEREUM_CHAIN_ID, blockNumber, blockNumber);
+        verify(repository).markJobCompleted(45L);
+    }
+
+    @Test
     void ingestRangeRejectsUnsupportedChain() {
         StartIngestionRequest request = new StartIngestionRequest(
                 137L,
@@ -225,6 +263,35 @@ class BlockIngestionServiceTest {
 
         verify(repository).markFailedBlockRetrying(ETHEREUM_CHAIN_ID, blockNumber);
         verify(repository).markFailedBlockSuccess(ETHEREUM_CHAIN_ID, blockNumber);
+    }
+
+    @Test
+    void getJobReturnsPersistedJobStatus() {
+        IngestionJobStatusResponse job = new IngestionJobStatusResponse(
+                99L,
+                ETHEREUM_CHAIN_ID,
+                BigInteger.valueOf(22_000_001L),
+                BigInteger.valueOf(22_000_010L),
+                "COMPLETED",
+                Instant.parse("2026-06-12T09:00:00Z"),
+                Instant.parse("2026-06-12T09:01:00Z"),
+                null
+        );
+        when(repository.findJobById(99L)).thenReturn(job);
+
+        IngestionJobStatusResponse response = service.getJob(99L);
+
+        assertThat(response).isEqualTo(job);
+        verify(repository).findJobById(99L);
+    }
+
+    @Test
+    void getJobRejectsInvalidJobId() {
+        assertThatThrownBy(() -> service.getJob(0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("jobId must be positive");
+
+        verifyNoInteractions(rpcAdapter, repository);
     }
 
     private BlockData block(BigInteger blockNumber, Instant blockTimestamp) {

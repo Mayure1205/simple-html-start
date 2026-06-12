@@ -43,6 +43,8 @@ Starts a small sequential block-range ingestion job. The range is limited by `et
 
 If the checkpoint is already inside the requested range, the service resumes from `checkpoint + 1` and reports how many requested blocks were skipped.
 
+The current backend allows one active range ingestion job per chain per application instance. A later Redis lock will extend this protection across multiple running instances.
+
 Request:
 
 ```json
@@ -89,7 +91,7 @@ Restart example after checkpoint `22000002`:
 
 ### `GET /api/v1/ingestion/jobs/{jobId}`
 
-Planned endpoint. Returns job status and progress.
+Returns persisted ingestion job status.
 
 Response:
 
@@ -98,12 +100,11 @@ Response:
   "jobId": 42,
   "chainId": 1,
   "startBlock": 22000000,
-  "endBlock": 22000500,
-  "processedBlocks": 130,
-  "failedBlocks": 2,
-  "status": "RUNNING",
+  "endBlock": 22000005,
+  "status": "COMPLETED",
   "startedAt": "2026-06-12T10:00:00Z",
-  "completedAt": null
+  "completedAt": "2026-06-12T10:00:45Z",
+  "failureReason": null
 }
 ```
 
@@ -220,6 +221,7 @@ All API errors should use this shape:
   "timestamp": "2026-06-12T10:15:30Z",
   "status": 400,
   "error": "Bad Request",
+  "errorCode": "INVALID_REQUEST",
   "message": "startBlock must be less than or equal to endBlock",
   "path": "/api/v1/ingestion/jobs"
 }
