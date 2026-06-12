@@ -1,5 +1,6 @@
 package com.chainsight.ingestion.controller;
 
+import com.chainsight.ingestion.dto.FailedBlockResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.IngestionJobResponse;
 import com.chainsight.ingestion.dto.IngestionStatusResponse;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigInteger;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/ingestion")
@@ -42,5 +44,21 @@ public class IngestionController {
     @GetMapping("/status")
     public ResponseEntity<IngestionStatusResponse> getStatus(@RequestParam(defaultValue = "1") long chainId) {
         return ResponseEntity.ok(ingestionService.getStatus(chainId));
+    }
+
+    @GetMapping("/failed-blocks")
+    public ResponseEntity<List<FailedBlockResponse>> getFailedBlocks(
+            @RequestParam(defaultValue = "1") long chainId,
+            @RequestParam(required = false) String status
+    ) {
+        return ResponseEntity.ok(ingestionService.getFailedBlocks(chainId, status));
+    }
+
+    @PostMapping("/failed-blocks/{blockNumber}/retry")
+    public ResponseEntity<IngestionResult> retryFailedBlock(
+            @PathVariable BigInteger blockNumber,
+            @RequestParam(defaultValue = "1") long chainId
+    ) {
+        return ResponseEntity.ok(ingestionService.retryFailedBlock(chainId, blockNumber));
     }
 }

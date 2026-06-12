@@ -3,6 +3,7 @@ package com.chainsight.ingestion.service;
 import com.chainsight.ingestion.dto.IngestionJobResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.StartIngestionRequest;
+import com.chainsight.exception.RpcFetchException;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
 import com.chainsight.ingestion.repository.BlockJdbcRepository;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -110,11 +112,49 @@ class BlockIngestionServiceTest {
 
         assertThat(response.jobId()).isEqualTo(42L);
         assertThat(response.chainId()).isEqualTo(ETHEREUM_CHAIN_ID);
+        assertThat(response.resumeFromBlock()).isEqualTo(startBlock);
+        assertThat(response.skippedBlocks()).isZero();
         assertThat(response.processedBlocks()).isEqualTo(2);
         assertThat(response.transactionsInserted()).isEqualTo(4);
         assertThat(response.status()).isEqualTo("COMPLETED");
 
         verify(repository).markJobCompleted(42L);
+    }
+
+    @Test
+    void ingestRangeResumesFromCheckpointAndSkipsCommittedBlocks() {
+        runTransactionsImmediately();
+
+        BigInteger startBlock = BigInteger.valueOf(22_000_001L);
+        BigInteger skippedBlock = startBlock;
+        BigInteger resumeBlock = BigInteger.valueOf(22_000_002L);
+        BigInteger endBlock = BigInteger.valueOf(22_000_003L);
+
+        BlockData resumeBlockData = block(resumeBlock, Instant.parse("2026-06-12T09:00:12Z"));
+        BlockData finalBlockData = block(endBlock, Instant.parse("2026-06-12T09:00:24Z"));
+
+        when(repository.createJob(ETHEREUM_CHAIN_ID, startBlock, endBlock)).thenReturn(43L);
+        when(repository.getLastProcessedBlock(ETHEREUM_CHAIN_ID)).thenReturn(skippedBlock.longValueExact());
+        when(rpcAdapter.fetchBlock(resumeBlock)).thenReturn(resumeBlockData);
+        when(rpcAdapter.fetchBlock(endBlock)).thenReturn(finalBlockData);
+        when(repository.insertBlock(any(BlockData.class), eq(ETHEREUM_CHAIN_ID))).thenReturn(1);
+        when(repository.insertTransactions(any(), eq(ETHEREUM_CHAIN_ID), any())).thenReturn(2);
+
+        IngestionJobResponse response = service.ingestRange(new StartIngestionRequest(
+                ETHEREUM_CHAIN_ID,
+                startBlock,
+                endBlock
+        ));
+
+        assertThat(response.resumeFromBlock()).isEqualTo(resumeBlock);
+        assertThat(response.skippedBlocks()).isEqualTo(1);
+        assertThat(response.processedBlocks()).isEqualTo(2);
+        assertThat(response.transactionsInserted()).isEqualTo(4);
+
+        verify(rpcAdapter, never()).fetchBlock(skippedBlock);
+        verify(rpcAdapter).fetchBlock(resumeBlock);
+        verify(rpcAdapter).fetchBlock(endBlock);
+        verify(repository).markJobCompleted(43L);
     }
 
     @Test
@@ -145,6 +185,46 @@ class BlockIngestionServiceTest {
                 .hasMessage("Block range must be 100 blocks or fewer");
 
         verifyNoInteractions(rpcAdapter, repository);
+    }
+
+    @Test
+    void ingestRangeRecordsFailedBlockWhenRpcFetchFails() {
+        BigInteger failedBlock = BigInteger.valueOf(22_000_004L);
+        RpcFetchException failure = new RpcFetchException("RPC timeout", new RuntimeException("timeout"));
+
+        when(repository.createJob(ETHEREUM_CHAIN_ID, failedBlock, failedBlock)).thenReturn(44L);
+        when(rpcAdapter.fetchBlock(failedBlock)).thenThrow(failure);
+
+        assertThatThrownBy(() -> service.ingestRange(new StartIngestionRequest(
+                ETHEREUM_CHAIN_ID,
+                failedBlock,
+                failedBlock
+        )))
+                .isSameAs(failure);
+
+        verify(repository).recordFailedBlock(ETHEREUM_CHAIN_ID, failedBlock, "RPC timeout");
+        verify(repository).markJobFailed(44L, "RPC timeout");
+    }
+
+    @Test
+    void retryFailedBlockMarksRetryingThenSuccess() {
+        runTransactionsImmediately();
+
+        BigInteger blockNumber = BigInteger.valueOf(22_000_005L);
+        Instant blockTimestamp = Instant.parse("2026-06-12T09:00:48Z");
+        BlockData blockData = block(blockNumber, blockTimestamp);
+
+        when(rpcAdapter.fetchBlock(blockNumber)).thenReturn(blockData);
+        when(repository.insertBlock(blockData, ETHEREUM_CHAIN_ID)).thenReturn(1);
+        when(repository.insertTransactions(blockData.transactions(), ETHEREUM_CHAIN_ID, blockTimestamp)).thenReturn(2);
+
+        IngestionResult result = service.retryFailedBlock(ETHEREUM_CHAIN_ID, blockNumber);
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.transactionsInserted()).isEqualTo(2);
+
+        verify(repository).markFailedBlockRetrying(ETHEREUM_CHAIN_ID, blockNumber);
+        verify(repository).markFailedBlockSuccess(ETHEREUM_CHAIN_ID, blockNumber);
     }
 
     private BlockData block(BigInteger blockNumber, Instant blockTimestamp) {

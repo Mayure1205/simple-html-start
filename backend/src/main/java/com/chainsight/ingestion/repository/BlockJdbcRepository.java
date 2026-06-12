@@ -1,7 +1,9 @@
 package com.chainsight.ingestion.repository;
 
+import com.chainsight.ingestion.dto.FailedBlockResponse;
 import com.chainsight.ingestion.model.BlockData;
 import com.chainsight.ingestion.model.TransactionData;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -58,6 +60,72 @@ public class BlockJdbcRepository {
                      "SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, failure_reason = ? " +
                      "WHERE id = ?";
         jdbcTemplate.update(sql, failureReason, jobId);
+    }
+
+    public void recordFailedBlock(long chainId, BigInteger blockNumber, String failureReason) {
+        String sql = "INSERT INTO failed_blocks (chain_id, block_number, failure_reason, status) " +
+                     "VALUES (?, ?, ?, 'PENDING') " +
+                     "ON CONFLICT (chain_id, block_number) DO UPDATE SET " +
+                     "failure_reason = EXCLUDED.failure_reason, " +
+                     "status = 'PENDING', " +
+                     "updated_at = CURRENT_TIMESTAMP";
+
+        jdbcTemplate.update(sql, chainId, toLong(blockNumber), trimFailureReason(failureReason));
+    }
+
+    public void markFailedBlockRetrying(long chainId, BigInteger blockNumber) {
+        String sql = "UPDATE failed_blocks " +
+                     "SET status = 'RETRYING', retry_count = retry_count + 1, updated_at = CURRENT_TIMESTAMP " +
+                     "WHERE chain_id = ? AND block_number = ?";
+
+        int updatedRows = jdbcTemplate.update(sql, chainId, toLong(blockNumber));
+        if (updatedRows == 0) {
+            recordFailedBlock(chainId, blockNumber, "Manual retry requested");
+            jdbcTemplate.update(sql, chainId, toLong(blockNumber));
+        }
+    }
+
+    public void markFailedBlockSuccess(long chainId, BigInteger blockNumber) {
+        String sql = "UPDATE failed_blocks " +
+                     "SET status = 'SUCCESS', updated_at = CURRENT_TIMESTAMP " +
+                     "WHERE chain_id = ? AND block_number = ?";
+
+        jdbcTemplate.update(sql, chainId, toLong(blockNumber));
+    }
+
+    public List<FailedBlockResponse> findFailedBlocks(long chainId, String status) {
+        String baseSql = "SELECT chain_id, block_number, failure_reason, retry_count, status, created_at, updated_at " +
+                         "FROM failed_blocks WHERE chain_id = ?";
+        if (status == null || status.isBlank()) {
+            return jdbcTemplate.query(
+                    baseSql + " ORDER BY block_number ASC",
+                    (rs, rowNum) -> new FailedBlockResponse(
+                            rs.getLong("chain_id"),
+                            BigInteger.valueOf(rs.getLong("block_number")),
+                            rs.getString("failure_reason"),
+                            rs.getInt("retry_count"),
+                            rs.getString("status"),
+                            rs.getTimestamp("created_at").toInstant(),
+                            rs.getTimestamp("updated_at").toInstant()
+                    ),
+                    chainId
+            );
+        }
+
+        return jdbcTemplate.query(
+                baseSql + " AND status = ? ORDER BY block_number ASC",
+                (rs, rowNum) -> new FailedBlockResponse(
+                        rs.getLong("chain_id"),
+                        BigInteger.valueOf(rs.getLong("block_number")),
+                        rs.getString("failure_reason"),
+                        rs.getInt("retry_count"),
+                        rs.getString("status"),
+                        rs.getTimestamp("created_at").toInstant(),
+                        rs.getTimestamp("updated_at").toInstant()
+                ),
+                chainId,
+                status
+        );
     }
 
     public int insertBlock(BlockData block, long chainId) {
@@ -163,11 +231,15 @@ public class BlockJdbcRepository {
     }
 
     public long getLastProcessedBlock(long chainId) {
-        Long checkpoint = jdbcTemplate.queryForObject(
-                "SELECT last_processed_block FROM ingestion_checkpoints WHERE chain_id = ?",
-                Long.class,
-                chainId);
-        return checkpoint == null ? 0 : checkpoint;
+        try {
+            Long checkpoint = jdbcTemplate.queryForObject(
+                    "SELECT last_processed_block FROM ingestion_checkpoints WHERE chain_id = ?",
+                    Long.class,
+                    chainId);
+            return checkpoint == null ? 0 : checkpoint;
+        } catch (EmptyResultDataAccessException ex) {
+            return 0;
+        }
     }
 
     private BigDecimal toBigDecimal(BigInteger value) {
@@ -216,5 +288,12 @@ public class BlockJdbcRepository {
             }
         }
         return insertedRows;
+    }
+
+    private String trimFailureReason(String failureReason) {
+        if (failureReason == null || failureReason.isBlank()) {
+            return "Unknown ingestion failure";
+        }
+        return failureReason.length() <= 1000 ? failureReason : failureReason.substring(0, 1000);
     }
 }

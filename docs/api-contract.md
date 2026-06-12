@@ -18,7 +18,7 @@ Returns Spring Boot Actuator health for the backend and connected dependencies.
 
 ## Ingestion
 
-Sprint 1 implements a sequential ingestion path. Later sprints will make this asynchronous and concurrent.
+Sprint 2 implements a sequential, checkpoint-aware ingestion path. Later sprints will make this asynchronous and concurrent.
 
 ### `POST /api/v1/ingestion/blocks/{blockNumber}`
 
@@ -39,7 +39,9 @@ Response:
 
 ### `POST /api/v1/ingestion/jobs`
 
-Starts a small sequential block-range ingestion job. The range is limited by `ethereum.ingestion.max-range-size` while the project is still in the sequential Sprint 1 implementation.
+Starts a small sequential block-range ingestion job. The range is limited by `ethereum.ingestion.max-range-size` while the project is still sequential.
+
+If the checkpoint is already inside the requested range, the service resumes from `checkpoint + 1` and reports how many requested blocks were skipped.
 
 Request:
 
@@ -59,8 +61,27 @@ Response `202 Accepted`:
   "chainId": 1,
   "startBlock": 22000000,
   "endBlock": 22000005,
+  "resumeFromBlock": 22000000,
+  "skippedBlocks": 0,
   "processedBlocks": 6,
   "transactionsInserted": 840,
+  "failedBlocks": 0,
+  "status": "COMPLETED"
+}
+```
+
+Restart example after checkpoint `22000002`:
+
+```json
+{
+  "jobId": 43,
+  "chainId": 1,
+  "startBlock": 22000000,
+  "endBlock": 22000005,
+  "resumeFromBlock": 22000003,
+  "skippedBlocks": 3,
+  "processedBlocks": 3,
+  "transactionsInserted": 420,
   "failedBlocks": 0,
   "status": "COMPLETED"
 }
@@ -105,11 +126,27 @@ Response:
 
 ### `GET /api/v1/ingestion/failed-blocks?chainId=1&status=PENDING`
 
-Planned endpoint. Returns failed blocks waiting for retry.
+Returns failed blocks. The `status` query parameter is optional and can be one of `PENDING`, `RETRYING`, `SUCCESS`, or `DEAD`.
+
+Response:
+
+```json
+[
+  {
+    "chainId": 1,
+    "blockNumber": 22000004,
+    "failureReason": "RPC timeout",
+    "retryCount": 1,
+    "status": "PENDING",
+    "createdAt": "2026-06-12T10:15:30Z",
+    "updatedAt": "2026-06-12T10:20:00Z"
+  }
+]
+```
 
 ### `POST /api/v1/ingestion/failed-blocks/{blockNumber}/retry?chainId=1`
 
-Planned endpoint. Queues a failed block for retry.
+Retries one failed block immediately. On success, the failed-block row is marked `SUCCESS`. On failure, it is recorded again as `PENDING` with the latest failure reason.
 
 ## Network Analytics
 

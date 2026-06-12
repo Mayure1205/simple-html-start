@@ -7,6 +7,8 @@ public record IngestionJobResponse(
         long chainId,
         BigInteger startBlock,
         BigInteger endBlock,
+        BigInteger resumeFromBlock,
+        long skippedBlocks,
         long processedBlocks,
         long transactionsInserted,
         long failedBlocks,

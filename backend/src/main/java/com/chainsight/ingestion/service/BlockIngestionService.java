@@ -1,5 +1,6 @@
 package com.chainsight.ingestion.service;
 
+import com.chainsight.ingestion.dto.FailedBlockResponse;
 import com.chainsight.ingestion.dto.IngestionResult;
 import com.chainsight.ingestion.dto.IngestionJobResponse;
 import com.chainsight.ingestion.dto.IngestionStatusResponse;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -70,13 +72,21 @@ public class BlockIngestionService {
         long jobId = repository.createJob(request.chainId(), request.startBlock(), request.endBlock());
         long processedBlocks = 0;
         long insertedTransactions = 0;
+        long lastProcessedBlock = repository.getLastProcessedBlock(request.chainId());
+        BigInteger resumeFromBlock = nextBlockToProcess(request.startBlock(), lastProcessedBlock);
+        long skippedBlocks = skippedBlockCount(request.startBlock(), resumeFromBlock);
 
         try {
-            BigInteger currentBlock = request.startBlock();
+            BigInteger currentBlock = resumeFromBlock;
             while (currentBlock.compareTo(request.endBlock()) <= 0) {
-                IngestionResult result = ingestBlock(currentBlock);
-                processedBlocks++;
-                insertedTransactions += result.transactionsInserted();
+                try {
+                    IngestionResult result = ingestBlock(currentBlock);
+                    processedBlocks++;
+                    insertedTransactions += result.transactionsInserted();
+                } catch (RuntimeException ex) {
+                    repository.recordFailedBlock(request.chainId(), currentBlock, ex.getMessage());
+                    throw ex;
+                }
                 currentBlock = currentBlock.add(BigInteger.ONE);
             }
 
@@ -86,6 +96,8 @@ public class BlockIngestionService {
                     request.chainId(),
                     request.startBlock(),
                     request.endBlock(),
+                    resumeFromBlock,
+                    skippedBlocks,
                     processedBlocks,
                     insertedTransactions,
                     0,
@@ -95,6 +107,37 @@ public class BlockIngestionService {
             repository.markJobFailed(jobId, ex.getMessage());
             throw ex;
         }
+    }
+
+    public List<FailedBlockResponse> getFailedBlocks(long chainId, String status) {
+        validateSupportedChain(chainId);
+        validateFailedBlockStatus(status);
+        return repository.findFailedBlocks(chainId, status);
+    }
+
+    public IngestionResult retryFailedBlock(long chainId, BigInteger blockNumber) {
+        validateSupportedChain(chainId);
+        validateBlockNumber(blockNumber, "blockNumber");
+
+        repository.markFailedBlockRetrying(chainId, blockNumber);
+        try {
+            IngestionResult result = ingestBlock(blockNumber);
+            repository.markFailedBlockSuccess(chainId, blockNumber);
+            return result;
+        } catch (RuntimeException ex) {
+            repository.recordFailedBlock(chainId, blockNumber, ex.getMessage());
+            throw ex;
+        }
+    }
+
+    private BigInteger nextBlockToProcess(BigInteger requestedStartBlock, long lastProcessedBlock) {
+        BigInteger checkpointNextBlock = BigInteger.valueOf(lastProcessedBlock).add(BigInteger.ONE);
+        return checkpointNextBlock.max(requestedStartBlock);
+    }
+
+    private long skippedBlockCount(BigInteger requestedStartBlock, BigInteger resumeFromBlock) {
+        BigInteger skippedBlocks = resumeFromBlock.subtract(requestedStartBlock);
+        return skippedBlocks.max(BigInteger.ZERO).longValueExact();
     }
 
     public IngestionStatusResponse getStatus(long chainId) {
@@ -166,6 +209,15 @@ public class BlockIngestionService {
     private void validateSupportedChain(long chainId) {
         if (chainId != ethereumChainId) {
             throw new IllegalArgumentException("Only Ethereum chainId " + ethereumChainId + " is supported in MVP");
+        }
+    }
+
+    private void validateFailedBlockStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return;
+        }
+        if (!Set.of("PENDING", "RETRYING", "SUCCESS", "DEAD").contains(status)) {
+            throw new IllegalArgumentException("Invalid failed block status: " + status);
         }
     }
 }

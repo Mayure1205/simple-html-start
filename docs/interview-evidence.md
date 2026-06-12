@@ -10,10 +10,12 @@ This document tracks verifiable engineering decisions and their implementation w
 | Defined MVP API contract | `docs/api-contract.md` | `DONE` |
 | Implemented Web3j RPC adapter for Ethereum blocks | `backend/src/main/java/com/chainsight/ingestion/service/EthereumRpcAdapter.java` | `CODED - NEEDS RUNTIME VERIFY` |
 | Added block-range ingestion API | `backend/src/main/java/com/chainsight/ingestion/controller/IngestionController.java`, `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java` | `CODED - NEEDS RUNTIME VERIFY` |
-| Added ingestion service unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java`; `mvn test` result: 4 tests, 0 failures | `DONE` |
+| Added ingestion service unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java`; `mvn test` result: 5 service tests, 0 failures | `DONE` |
 | Used concurrent extraction (ThreadPoolExecutor) | | `TODO` |
 | Implemented CompletableFuture pipeline | | `TODO` |
-| Built restart-safe ACID checkpointing | `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java` | `CODED - TEST TODO` |
+| Added checkpoint-aware range resume | `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`, `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java` | `UNIT TESTED` |
+| Built restart-safe ACID checkpointing | `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`, `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java` | `INTEGRATION TEST ADDED - DOCKER RUN PENDING` |
+| Added failed-block tracking and retry API | `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java`, `backend/src/main/java/com/chainsight/ingestion/service/BlockIngestionService.java`, `backend/src/main/java/com/chainsight/ingestion/controller/IngestionController.java` | `CODED - TESTS ADDED, RUN PENDING` |
 | Optimized ingestion with JDBC batch updates | `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java` | `CODED - BENCHMARK TODO` |
 | Improved query performance with B-tree indexes | | `TODO` |
 | Used SQL Window functions for analytics | | `TODO` |
