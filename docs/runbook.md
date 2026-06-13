@@ -87,6 +87,8 @@ Do not claim measured performance, passing GitHub Actions, or a `v1.0.0` release
 | `POSTGRES_PASSWORD` | `chainsight_password` | PostgreSQL password |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
+| `JWT_SECRET` | local dev secret | JWT signing secret; use a long random value outside local dev |
+| `JWT_EXPIRES_IN_SECONDS` | `86400` | JWT access token lifetime |
 | `ETH_RPC_URL` | `https://cloudflare-eth.com` | Ethereum JSON-RPC URL |
 
 Never commit provider URLs containing API keys.

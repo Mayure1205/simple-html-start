@@ -12,7 +12,7 @@ ChainSight is a backend data engineering project. It takes Ethereum block data f
 
 Technical interview answer:
 
-ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented system currently supports Web3j-based block and transaction receipt fetching, async range jobs, bounded concurrent block and receipt extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, network analytics APIs using PostgreSQL window functions, wallet transaction-history and summary APIs, Redis-backed cache/locks/rate limiting, Resilience4j circuit breaker protection around RPC calls, a local operational dashboard with wallet lookup served by Spring Boot, deployment-readiness artifacts, and evidence-readiness documentation.
+ChainSight is a Java 21 and Spring Boot historical-data warehouse using Ethereum as a public high-volume data source. The implemented system currently supports Web3j-based block and transaction receipt fetching, async range jobs, bounded concurrent block and receipt extraction with `CompletableFuture`, checkpoint-aware ordered persistence, JDBC batch inserts, network analytics APIs using PostgreSQL window functions, wallet transaction-history and summary APIs, JWT email/password authentication, user-specific tracked wallet watchlists, Redis-backed cache/locks/rate limiting, Resilience4j circuit breaker protection around RPC calls, a local operational dashboard with wallet lookup and tracked-wallet controls served by Spring Boot, deployment-readiness artifacts, and evidence-readiness documentation.
 
 ### 2-Minute Explanation
 
@@ -22,7 +22,7 @@ Ethereum is not the product here. It is the data source. The real engineering pr
 
 Technical interview answer:
 
-The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds async range-job submission, bounded custom `ThreadPoolExecutor` beans, and `CompletableFuture` scheduling so multiple blocks and receipts can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions. Sprint 5 adds Redis-backed analytics caching, a Redis distributed ingestion lock, a Redis token-bucket API rate limiter, and Resilience4j circuit breaker wrapping around Ethereum RPC calls. Sprint 6 adds a static dashboard for operating and demoing the implemented ingestion and analytics APIs. Sprint 7 adds Docker Compose and Nginx deployment-readiness artifacts, Sprint 8 adds a GitHub Actions workflow file plus benchmark and release-readiness documentation, and Sprint 9 adds wallet transaction history, wallet summary APIs, and a wallet lookup panel in the dashboard.
+The project is a modular Spring Boot backend. The implemented ingestion slice fetches full Ethereum blocks using Web3j, fetches transaction receipts for execution metadata, maps blocks and native transactions into Java records, and persists them through a `JdbcTemplate` repository. Sprint 3 adds async range-job submission, bounded custom `ThreadPoolExecutor` beans, and `CompletableFuture` scheduling so multiple blocks and receipts can be extracted from RPC concurrently. PostgreSQL writes still happen in block-number order, and each block persistence operation is wrapped in a Spring `TransactionTemplate`, so block rows, transaction rows, wallet rows, and checkpoint updates are committed atomically. Sprint 4 starts the analytics layer with SQL-backed network endpoints for daily metrics and largest transactions, including `LAG()` and `RANK()` window functions. Sprint 5 adds Redis-backed analytics caching, a Redis distributed ingestion lock, a Redis token-bucket API rate limiter, and Resilience4j circuit breaker wrapping around Ethereum RPC calls. Sprint 6 adds a static dashboard for operating and demoing the implemented ingestion and analytics APIs. Sprint 7 adds Docker Compose and Nginx deployment-readiness artifacts, Sprint 8 adds a GitHub Actions workflow file plus benchmark and release-readiness documentation, Sprint 9 adds wallet transaction history, wallet summary APIs, and a wallet lookup panel in the dashboard, and Sprint 10 adds JWT authentication plus per-user tracked wallet watchlists with dashboard login/watchlist controls.
 
 ## Architecture Flow
 
@@ -66,6 +66,10 @@ Important implemented files:
 | Wallet analytics API | `backend/src/main/java/com/chainsight/analytics/controller/WalletAnalyticsController.java` |
 | Wallet analytics service | `backend/src/main/java/com/chainsight/analytics/service/WalletAnalyticsService.java` |
 | Wallet analytics repository | `backend/src/main/java/com/chainsight/analytics/repository/WalletAnalyticsRepository.java` |
+| Auth API | `backend/src/main/java/com/chainsight/auth/controller/AuthController.java` |
+| JWT service | `backend/src/main/java/com/chainsight/auth/service/JwtService.java` |
+| Security config | `backend/src/main/java/com/chainsight/auth/security/SecurityConfig.java` |
+| Tracked wallet API | `backend/src/main/java/com/chainsight/wallet/controller/TrackedWalletController.java` |
 | Redis ingestion lock | `backend/src/main/java/com/chainsight/resilience/RedisIngestionLockService.java` |
 | Redis token bucket | `backend/src/main/java/com/chainsight/resilience/RedisTokenBucketRateLimiter.java` |
 | API rate limit filter | `backend/src/main/java/com/chainsight/resilience/ApiRateLimitFilter.java` |
@@ -85,6 +89,8 @@ Important implemented files:
 | Unit tests | `backend/src/test/java/com/chainsight/ingestion/service/BlockIngestionServiceTest.java` |
 | Analytics unit tests | `backend/src/test/java/com/chainsight/analytics/service/NetworkAnalyticsServiceTest.java` |
 | Wallet analytics unit tests | `backend/src/test/java/com/chainsight/analytics/service/WalletAnalyticsServiceTest.java` |
+| Auth unit tests | `backend/src/test/java/com/chainsight/auth/service/AuthServiceTest.java` |
+| Tracked wallet unit tests | `backend/src/test/java/com/chainsight/wallet/service/TrackedWalletServiceTest.java` |
 | PostgreSQL integration tests | `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java` |
 
 ## Sprint-Wise Implementation Summary
@@ -663,6 +669,7 @@ Status:
 - Implemented in code.
 - Focused unit tests were added.
 - Static dashboard wallet lookup is wired to the new wallet APIs.
+- Dashboard login and tracked-wallet controls are wired to the JWT/watchlist APIs.
 - Tests were not run in this turn because we are avoiding heavier commands.
 - Manual browser verification is still pending.
 
@@ -733,6 +740,100 @@ Evidence:
 - Test added: `WalletAnalyticsServiceTest.java`.
 - API contract: `docs/api-contract.md`.
 
+### Sprint 10 - JWT Auth And Tracked Wallets
+
+Status:
+
+- Implemented in code.
+- Focused service unit tests were added.
+- Tests were not run in this turn because we are avoiding heavier commands.
+- MetaMask / WalletConnect login is planned but not implemented yet.
+
+What was built:
+
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/auth/me`
+- BCrypt password hashing.
+- HMAC-SHA256 JWT creation and validation.
+- Stateless Spring Security filter for JWT authentication.
+- Flyway migration for `app_users` and `user_tracked_wallets`.
+- `GET /api/v1/tracked-wallets`
+- `POST /api/v1/tracked-wallets`
+- `DELETE /api/v1/tracked-wallets/{walletId}`
+- Dashboard login, logout, tracked-wallet list, track-current-wallet, and remove-wallet controls.
+
+Why it was needed:
+
+- Wallet analytics becomes more product-like when a user can save addresses they care about. JWT authentication also adds a common Java backend interview topic: stateless protected APIs.
+
+Where it is used:
+
+- Schema migration: `backend/src/main/resources/db/migration/V2__auth_and_tracked_wallets.sql`
+- Auth controller: `backend/src/main/java/com/chainsight/auth/controller/AuthController.java`
+- Auth service: `backend/src/main/java/com/chainsight/auth/service/AuthService.java`
+- JWT service: `backend/src/main/java/com/chainsight/auth/service/JwtService.java`
+- JWT filter: `backend/src/main/java/com/chainsight/auth/security/JwtAuthenticationFilter.java`
+- Security config: `backend/src/main/java/com/chainsight/auth/security/SecurityConfig.java`
+- Auth repository: `backend/src/main/java/com/chainsight/auth/repository/AuthRepository.java`
+- Tracked wallet controller: `backend/src/main/java/com/chainsight/wallet/controller/TrackedWalletController.java`
+- Tracked wallet service: `backend/src/main/java/com/chainsight/wallet/service/TrackedWalletService.java`
+- Tracked wallet repository: `backend/src/main/java/com/chainsight/wallet/repository/TrackedWalletRepository.java`
+- Dashboard HTML: `backend/src/main/resources/static/dashboard/index.html`
+- Dashboard JavaScript: `backend/src/main/resources/static/dashboard/dashboard.js`
+- Dashboard CSS: `backend/src/main/resources/static/dashboard/dashboard.css`
+- Auth tests: `backend/src/test/java/com/chainsight/auth/service/AuthServiceTest.java`
+- Tracked wallet tests: `backend/src/test/java/com/chainsight/wallet/service/TrackedWalletServiceTest.java`
+- API docs: `docs/api-contract.md`
+
+Java/Spring/PostgreSQL concepts:
+
+- Spring Security `SecurityFilterChain`.
+- `OncePerRequestFilter`.
+- Stateless sessions with JWT.
+- BCrypt password hashing.
+- HMAC-SHA256 signing.
+- `Authorization: Bearer <token>`.
+- `@AuthenticationPrincipal`.
+- Browser local storage for the dashboard JWT.
+- Authenticated browser `fetch` calls with `Authorization: Bearer <token>`.
+- Flyway additive migration.
+- Per-user ownership checks through `user_id`.
+- PostgreSQL unique constraint for duplicate watchlist prevention.
+
+Beginner-friendly explanation:
+
+Users can now create an account, log in, receive a JWT, and use that token to maintain their own tracked wallet list from the dashboard. Tracking a wallet means saving a public address for monitoring; it does not prove the user owns that wallet.
+
+Technical interview answer:
+
+Sprint 10 adds stateless authentication with Spring Security. Passwords are hashed with BCrypt before storage in `app_users`. After register/login, the backend issues an HMAC-SHA256 signed JWT containing the user id, email, issued-at time, and expiry. `JwtAuthenticationFilter` validates the bearer token on protected routes and places an authenticated principal into the Spring Security context. The tracked-wallet APIs use that principal's `userId` so users can only list, create, or delete their own watchlist rows. The dashboard stores the JWT in local storage for the local demo and sends it as a bearer token for tracked-wallet requests.
+
+Possible interviewer questions:
+
+| Question | Short Answer |
+|---|---|
+| Where are passwords stored? | Only BCrypt password hashes are stored in `app_users`, never raw passwords. |
+| Why JWT? | It keeps protected APIs stateless, so the backend does not need server-side sessions. |
+| What does the JWT contain? | User id, email, issued-at timestamp, and expiry timestamp. |
+| How do protected APIs know the user? | The JWT filter validates the token and sets an `AuthenticatedUserPrincipal`. |
+| Does a tracked wallet prove ownership? | No. It is a user watchlist of public addresses. Ownership proof comes later with MetaMask signature login. |
+| Where is the JWT stored in the dashboard? | Local storage for the local demo; production would need stricter XSS hardening and possibly cookie-based choices. |
+| Is MetaMask login implemented? | Not yet. The next step is nonce generation, wallet signature verification, and JWT issuance after signature validation. |
+
+Evidence:
+
+- Code: `AuthController.java`.
+- Code: `AuthService.java`.
+- Code: `JwtService.java`.
+- Code: `SecurityConfig.java`.
+- Code: `TrackedWalletController.java`.
+- Code: `TrackedWalletService.java`.
+- Code: `backend/src/main/resources/static/dashboard`.
+- Migration: `V2__auth_and_tracked_wallets.sql`.
+- Tests added: `AuthServiceTest.java`, `TrackedWalletServiceTest.java`.
+- API contract: `docs/api-contract.md`.
+
 ## Core Java Concepts Used
 
 | Concept | Where Used | Explanation |
@@ -749,6 +850,7 @@ Evidence:
 | `LocalDate` | `NetworkAnalyticsController` | Accepts date-range query parameters for analytics. |
 | `BigDecimal` | Analytics DTOs and repository mapping | Represents SQL numeric analytics values safely. |
 | Regex `Pattern` | `WalletAnalyticsService` | Validates Ethereum wallet address shape before querying. |
+| Cryptography APIs | `JwtService` | Signs JWTs with HMAC-SHA256. |
 | `UUID` | `RedisIngestionLockService` | Creates unique lock tokens for safe distributed lock release. |
 | Browser `fetch` | `dashboard.js` | Calls backend APIs from the local dashboard. |
 
@@ -771,6 +873,9 @@ Evidence:
 | `@DateTimeFormat` | `NetworkAnalyticsController` | Parses ISO date request parameters. |
 | `OncePerRequestFilter` | `ApiRateLimitFilter` | Applies rate limiting before controllers run. |
 | Static resources | `backend/src/main/resources/static/dashboard` | Serves the local dashboard from Spring Boot. |
+| Spring Security | `SecurityConfig`, `JwtAuthenticationFilter` | Protects authenticated user APIs with JWT. |
+| Password encoder | `AuthService` | Hashes user passwords with BCrypt before saving them. |
+| `@AuthenticationPrincipal` | `AuthController`, `TrackedWalletController` | Reads the authenticated user from the security context. |
 
 ## PostgreSQL And SQL Concepts Used
 
@@ -785,6 +890,9 @@ Implemented:
 - SQL aggregation for daily network metrics.
 - SQL `CASE WHEN` aggregation for wallet sent/received totals.
 - `LIMIT` and `OFFSET` pagination for wallet transaction history.
+- `app_users` table for login accounts.
+- `user_tracked_wallets` table for per-user watchlists.
+- Unique `(user_id, chain_id, wallet_address)` to prevent duplicate tracked wallets.
 - Window functions with `LAG()` and `RANK()`.
 - Transaction rollback behavior tested in Testcontainers test code.
 
@@ -794,6 +902,7 @@ Important files:
 - `backend/src/main/java/com/chainsight/ingestion/repository/BlockJdbcRepository.java`
 - `backend/src/main/java/com/chainsight/analytics/repository/NetworkAnalyticsRepository.java`
 - `backend/src/main/java/com/chainsight/analytics/repository/WalletAnalyticsRepository.java`
+- `backend/src/main/resources/db/migration/V2__auth_and_tracked_wallets.sql`
 - `backend/src/test/java/com/chainsight/ingestion/repository/BlockJdbcRepositoryIntegrationTest.java`
 
 ## Concurrency Concepts Used
@@ -820,6 +929,7 @@ Implemented now:
 - Docker Compose exists for local PostgreSQL and Redis.
 - Production Docker Compose and Nginx config are prepared.
 - GitHub Actions backend CI workflow file is prepared.
+- Spring Security JWT authentication is implemented.
 - Redis analytics cache is implemented.
 - Wallet analytics read APIs are implemented without Redis caching.
 - Redis distributed ingestion lock is implemented.
@@ -961,6 +1071,10 @@ Evidence:
 | Invalid wallet address | Rejects request before querying | `WalletAnalyticsServiceTest` |
 | Wallet page below zero | Rejects request before querying | `WalletAnalyticsServiceTest` |
 | Wallet page size too large | Rejects request before querying | `WalletAnalyticsServiceTest` |
+| Duplicate user registration | Rejects duplicate email | `AuthServiceTest` |
+| Wrong login password | Rejects with generic login error | `AuthServiceTest` |
+| Duplicate tracked wallet | Rejects duplicate watchlist row | `TrackedWalletServiceTest` |
+| Missing JWT for tracked wallets | Spring Security returns 401 | `SecurityConfig` |
 | Invalid analytics date range | Rejects request | `NetworkAnalyticsServiceTest` |
 | Analytics limit too large | Rejects request | `NetworkAnalyticsServiceTest` |
 | Analytics cache miss | Falls back to PostgreSQL and writes Redis cache | `NetworkAnalyticsService` |
@@ -992,12 +1106,14 @@ Evidence:
 | Where is Redis used? | Analytics cache, ingestion distributed lock, and API token bucket. |
 | Where is Resilience4j used? | Ethereum block and receipt RPC calls in `EthereumRpcAdapter`. |
 | What does the dashboard prove? | The backend can be operated and demoed visually through implemented APIs. |
+| Where is JWT used? | Auth endpoints issue JWTs; tracked-wallet endpoints require `Authorization: Bearer <token>`. |
+| Does tracking a wallet prove ownership? | No. It saves a public address to a user's watchlist. Signature-based ownership proof is future work. |
 | Is AWS deployment complete? | Not yet. Docker, Compose, Nginx, and the EC2 runbook are ready, but no live URL or deployment evidence exists. |
 | Is CI implemented? | A GitHub Actions workflow file is present, but a passing remote run has not been captured yet. |
 | Why not JPA for transaction rows? | JPA is useful for metadata, but batch ETL inserts need direct SQL control. |
 | What extra value do receipts add? | They add execution status and actual gas used, which makes the warehouse useful for gas and failure analytics later. |
 | What is proven today? | Service resume behavior and validation are unit-tested. PostgreSQL integration tests are written but need Docker running to execute. |
-| What is not implemented yet? | Retry with backoff, top-wallet analytics, token analytics, live AWS hosting, passing CI evidence, HTTPS, and benchmark measurements. |
+| What is not implemented yet? | MetaMask signature login, refresh tokens, roles/admin auth, retry with backoff, top-wallet analytics, token analytics, live AWS hosting, passing CI evidence, HTTPS, and benchmark measurements. |
 
 ## Honest Limitations
 
@@ -1016,6 +1132,7 @@ Evidence:
 - Benchmark report exists as a template, but real measurements are not captured yet.
 - Release checklist exists, but `v1.0.0` is not tagged yet.
 - Top-wallet ranking is not implemented yet.
+- JWT auth is implemented, but refresh tokens, roles, password reset, and MetaMask signature login are not implemented yet.
 
 ## Resume Bullet
 
@@ -1030,6 +1147,7 @@ checkpoint-aware ordered persistence,
 transaction receipt mapping for status and gas-used fields,
 PostgreSQL window-function network analytics APIs,
 wallet transaction-history and summary APIs,
+JWT email/password authentication and user tracked-wallet watchlists,
 Redis-backed analytics caching, Redis distributed ingestion locking,
 Redis token-bucket API rate limiting, Resilience4j RPC circuit breaker wrapping,
 asynchronous range-job submission, parallel transaction-receipt fetching,
@@ -1045,6 +1163,10 @@ restart-safety scenarios.
 
 ## Future Topics — Do Not Claim Yet
 
+- MetaMask signature login.
+- WalletConnect frontend flow.
+- Refresh tokens and password reset.
+- Role-based admin controls.
 - Top-wallet analytics API.
 - Token analytics APIs.
 - Token dashboard views.

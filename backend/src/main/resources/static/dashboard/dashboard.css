@@ -249,7 +249,8 @@ label span {
 
 .form-grid,
 .date-row,
-.wallet-form {
+.wallet-form,
+.auth-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 10px;
@@ -265,8 +266,35 @@ label span {
   margin-bottom: 16px;
 }
 
+.account-panel {
+  margin-bottom: 16px;
+}
+
+.auth-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto auto auto;
+}
+
+.account-summary {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.account-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-summary strong {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 .wallet-form {
-  grid-template-columns: minmax(280px, 1fr) 100px auto;
+  grid-template-columns: minmax(280px, 1fr) minmax(160px, 0.5fr) 100px auto auto;
   margin-bottom: 14px;
 }
 
@@ -279,6 +307,42 @@ label span {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.tracked-wallets-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.tracked-wallet-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafb;
+  padding: 6px 8px 6px 10px;
+}
+
+.tracked-wallet-item button {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.tracked-wallet-item .load-wallet {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  font-weight: 700;
+}
+
+.tracked-wallet-item .delete-wallet {
+  border-color: #f4c7c3;
+  background: #fff5f5;
+  color: var(--red);
 }
 
 .wallet-summary-grid div {
@@ -486,6 +550,11 @@ th {
   .wallet-summary-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .auth-form,
+  .wallet-form {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -510,6 +579,7 @@ th {
   .split-grid.lower,
   .form-grid,
   .date-row,
+  .auth-form,
   .wallet-form,
   .wallet-summary-grid,
   .job-summary {

@@ -50,7 +50,7 @@ cp infra/env.prod.example infra/.env.prod
 nano infra/.env.prod
 ```
 
-Set a real `POSTGRES_PASSWORD` and `ETH_RPC_URL`. Never commit `infra/.env.prod`.
+Set a real `POSTGRES_PASSWORD`, `JWT_SECRET`, and `ETH_RPC_URL`. Never commit `infra/.env.prod`.
 
 Start the stack:
 

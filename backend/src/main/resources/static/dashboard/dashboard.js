@@ -1,12 +1,21 @@
 const state = {
   chainId: 1,
   lastJobId: null,
-  dailyMetrics: []
+  dailyMetrics: [],
+  token: localStorage.getItem("chainsightJwt"),
+  currentUser: null
 };
 
 const elements = {
   apiBaseInput: document.getElementById("apiBaseInput"),
   refreshButton: document.getElementById("refreshButton"),
+  authStatusBadge: document.getElementById("authStatusBadge"),
+  authForm: document.getElementById("authForm"),
+  authEmailInput: document.getElementById("authEmailInput"),
+  authPasswordInput: document.getElementById("authPasswordInput"),
+  logoutButton: document.getElementById("logoutButton"),
+  web3LoginButton: document.getElementById("web3LoginButton"),
+  currentUserEmail: document.getElementById("currentUserEmail"),
   chainIdInput: document.getElementById("chainIdInput"),
   startBlockInput: document.getElementById("startBlockInput"),
   endBlockInput: document.getElementById("endBlockInput"),
@@ -17,7 +26,9 @@ const elements = {
   toDateInput: document.getElementById("toDateInput"),
   limitInput: document.getElementById("limitInput"),
   walletAddressInput: document.getElementById("walletAddressInput"),
+  walletLabelInput: document.getElementById("walletLabelInput"),
   walletSizeInput: document.getElementById("walletSizeInput"),
+  trackWalletButton: document.getElementById("trackWalletButton"),
   failedBlocksButton: document.getElementById("failedBlocksButton"),
   lastProcessedBlock: document.getElementById("lastProcessedBlock"),
   indexedBlocks: document.getElementById("indexedBlocks"),
@@ -37,6 +48,7 @@ const elements = {
   walletNetFlow: document.getElementById("walletNetFlow"),
   walletLastActivity: document.getElementById("walletLastActivity"),
   walletTransactionsBody: document.getElementById("walletTransactionsBody"),
+  trackedWalletsList: document.getElementById("trackedWalletsList"),
   failedBlocksList: document.getElementById("failedBlocksList"),
   activityLog: document.getElementById("activityLog")
 };
@@ -94,12 +106,23 @@ function setBusy(button, busy) {
 }
 
 async function fetchJson(path, options = {}) {
+  const { auth = true, ...fetchOptions } = options;
+  const headers = { "Content-Type": "application/json", ...(fetchOptions.headers || {}) };
+  if (state.token && auth) {
+    headers.Authorization = `Bearer ${state.token}`;
+  }
+
   const response = await fetch(apiUrl(path), {
-    headers: { "Content-Type": "application/json" },
-    ...options
+    ...fetchOptions,
+    headers,
   });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch (error) {
+    payload = { message: text || `HTTP ${response.status}` };
+  }
   if (!response.ok) {
     throw new Error(payload?.message || payload?.errorCode || `HTTP ${response.status}`);
   }
@@ -208,6 +231,107 @@ function renderLargestTransactions(rows) {
   `).join("");
 }
 
+async function submitAuth(event) {
+  event.preventDefault();
+  const action = event.submitter.dataset.authAction;
+  const email = elements.authEmailInput.value.trim();
+  const password = elements.authPasswordInput.value;
+
+  if (!email || !password) {
+    logEvent("Email and password are required", "error");
+    return;
+  }
+
+  const response = await fetchJson(`/api/v1/auth/${action}`, {
+    auth: false,
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  });
+  state.token = response.accessToken;
+  state.currentUser = response.user;
+  localStorage.setItem("chainsightJwt", state.token);
+  elements.authPasswordInput.value = "";
+  renderAuthState();
+  await loadTrackedWallets();
+  logEvent(`${action === "register" ? "Registered" : "Logged in"} as ${response.user.email}`);
+}
+
+async function web3Login() {
+  if (!window.ethereum) {
+    logEvent("MetaMask is not installed", "error");
+    return;
+  }
+  
+  try {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    const walletAddress = accounts[0];
+    
+    // Fetch nonce from backend
+    const nonceResponse = await fetchJson(`/api/v1/auth/nonce?walletAddress=${walletAddress}`, { auth: false });
+    const message = `Sign this message to log in to ChainSight. Nonce: ${nonceResponse.nonce}`;
+    
+    // Request signature
+    const signature = await window.ethereum.request({ 
+      method: 'personal_sign', 
+      params: [message, walletAddress] 
+    });
+    
+    // Send to backend
+    const response = await fetchJson(`/api/v1/auth/wallet-login`, {
+      auth: false,
+      method: "POST",
+      body: JSON.stringify({ walletAddress, signature })
+    });
+    
+    state.token = response.accessToken;
+    state.currentUser = response.user;
+    localStorage.setItem("chainsightJwt", state.token);
+    renderAuthState();
+    await loadTrackedWallets();
+    logEvent(`Logged in with wallet ${shortHash(walletAddress)}`);
+  } catch (error) {
+    logEvent(error.message, "error");
+    throw error;
+  }
+}
+
+async function loadCurrentUser() {
+  if (!state.token) {
+    renderAuthState();
+    renderTrackedWallets([]);
+    return;
+  }
+
+  try {
+    state.currentUser = await fetchJson("/api/v1/auth/me");
+  } catch (error) {
+    state.token = null;
+    state.currentUser = null;
+    localStorage.removeItem("chainsightJwt");
+    logEvent("Saved login expired; please log in again", "error");
+  }
+  renderAuthState();
+}
+
+function logout() {
+  state.token = null;
+  state.currentUser = null;
+  localStorage.removeItem("chainsightJwt");
+  renderAuthState();
+  renderTrackedWallets([]);
+  logEvent("Logged out");
+}
+
+function renderAuthState() {
+  if (state.currentUser) {
+    elements.authStatusBadge.textContent = "Signed in";
+    elements.currentUserEmail.textContent = state.currentUser.email || shortHash(state.currentUser.walletAddress) || "Unknown User";
+  } else {
+    elements.authStatusBadge.textContent = "Signed out";
+    elements.currentUserEmail.textContent = "-";
+  }
+}
+
 async function loadWallet(event) {
   if (event) {
     event.preventDefault();
@@ -271,6 +395,73 @@ function resetWalletView(message) {
   elements.walletNetFlow.textContent = "-";
   elements.walletLastActivity.textContent = "-";
   elements.walletTransactionsBody.innerHTML = `<tr><td colspan="6" class="empty-cell">${message}</td></tr>`;
+}
+
+async function loadTrackedWallets() {
+  if (!state.token) {
+    renderTrackedWallets([]);
+    return;
+  }
+
+  const wallets = await fetchJson("/api/v1/tracked-wallets");
+  renderTrackedWallets(wallets || []);
+}
+
+async function trackCurrentWallet() {
+  if (!state.token) {
+    logEvent("Log in before tracking wallets", "error");
+    return;
+  }
+
+  const walletAddress = elements.walletAddressInput.value.trim();
+  if (!walletAddress) {
+    logEvent("Wallet address is required", "error");
+    return;
+  }
+
+  const chainId = Number(elements.chainIdInput.value || 1);
+  const label = elements.walletLabelInput.value.trim() || null;
+  await fetchJson("/api/v1/tracked-wallets", {
+    method: "POST",
+    body: JSON.stringify({ chainId, walletAddress, label })
+  });
+  await loadTrackedWallets();
+  logEvent(`Tracked wallet ${shortHash(walletAddress)}`);
+}
+
+async function deleteTrackedWallet(walletId) {
+  await fetchJson(`/api/v1/tracked-wallets/${walletId}`, {
+    method: "DELETE"
+  });
+  await loadTrackedWallets();
+  logEvent("Tracked wallet removed");
+}
+
+function renderTrackedWallets(wallets) {
+  if (!state.token) {
+    elements.trackedWalletsList.innerHTML = '<p class="empty-state">Log in to track wallets</p>';
+    return;
+  }
+
+  if (!wallets.length) {
+    elements.trackedWalletsList.innerHTML = '<p class="empty-state">No tracked wallets yet</p>';
+    return;
+  }
+
+  elements.trackedWalletsList.innerHTML = wallets.map((wallet) => `
+    <div class="tracked-wallet-item">
+      <button
+        type="button"
+        class="load-wallet"
+        data-load-wallet="${wallet.walletAddress}"
+        data-wallet-label="${wallet.label || ""}"
+        title="${wallet.walletAddress}"
+      >
+        ${wallet.label || shortHash(wallet.walletAddress)}
+      </button>
+      <button type="button" class="delete-wallet" data-delete-wallet="${wallet.id}">Remove</button>
+    </div>
+  `).join("");
 }
 
 function renderDailyChart(rows) {
@@ -371,12 +562,43 @@ function bindEvents() {
   elements.refreshButton.addEventListener("click", async () => {
     setBusy(elements.refreshButton, true);
     try {
-      await settleDashboardLoads([loadStatus(), loadAnalytics(), loadWallet(), loadFailedBlocks()]);
+      await settleDashboardLoads([
+        loadCurrentUser(),
+        loadStatus(),
+        loadAnalytics(),
+        loadWallet(),
+        loadTrackedWallets(),
+        loadFailedBlocks()
+      ]);
       logEvent("Dashboard refreshed");
     } finally {
       setBusy(elements.refreshButton, false);
     }
   });
+
+  elements.authForm.addEventListener("submit", async (event) => {
+    setBusy(event.submitter, true);
+    try {
+      await submitAuth(event);
+    } catch (error) {
+      logEvent(error.message, "error");
+    } finally {
+      setBusy(event.submitter, false);
+    }
+  });
+  elements.logoutButton.addEventListener("click", logout);
+  if (elements.web3LoginButton) {
+    elements.web3LoginButton.addEventListener("click", async () => {
+      setBusy(elements.web3LoginButton, true);
+      try {
+        await web3Login();
+      } catch (error) {
+        // error already logged
+      } finally {
+        setBusy(elements.web3LoginButton, false);
+      }
+    });
+  }
 
   elements.ingestionForm.addEventListener("submit", startIngestionJob);
   elements.analyticsForm.addEventListener("submit", async (event) => {
@@ -394,6 +616,39 @@ function bindEvents() {
       logEvent(error.message, "error");
     } finally {
       setBusy(event.submitter, false);
+    }
+  });
+  elements.trackWalletButton.addEventListener("click", async () => {
+    setBusy(elements.trackWalletButton, true);
+    try {
+      await trackCurrentWallet();
+    } catch (error) {
+      logEvent(error.message, "error");
+    } finally {
+      setBusy(elements.trackWalletButton, false);
+    }
+  });
+  elements.trackedWalletsList.addEventListener("click", async (event) => {
+    const walletAddress = event.target.dataset.loadWallet;
+    const walletLabel = event.target.dataset.walletLabel;
+    const walletId = event.target.dataset.deleteWallet;
+
+    if (walletAddress) {
+      elements.walletAddressInput.value = walletAddress;
+      elements.walletLabelInput.value = walletLabel || "";
+      try {
+        await loadWallet();
+      } catch (error) {
+        logEvent(error.message, "error");
+      }
+    }
+
+    if (walletId) {
+      try {
+        await deleteTrackedWallet(walletId);
+      } catch (error) {
+        logEvent(error.message, "error");
+      }
     }
   });
   elements.failedBlocksButton.addEventListener("click", async () => {
@@ -426,7 +681,7 @@ async function init() {
   bindEvents();
 
   try {
-    await settleDashboardLoads([loadStatus(), loadAnalytics(), loadFailedBlocks()]);
+    await settleDashboardLoads([loadCurrentUser(), loadStatus(), loadAnalytics(), loadTrackedWallets(), loadFailedBlocks()]);
     logEvent("Dashboard ready");
   } catch (error) {
     logEvent(error.message, "error");

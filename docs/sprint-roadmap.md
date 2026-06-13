@@ -95,7 +95,7 @@ Do not claim yet:
 - CI/CD pipeline success.
 - Hosted public demo.
 
-## Current Sprint 9 - Wallet Analytics API
+## Sprint 9 - Wallet Analytics API
 
 Implemented scope:
 
@@ -125,14 +125,48 @@ Still not implemented:
 - Token transfer analytics.
 - Redis caching for wallet analytics.
 
+## Current Sprint 10 - JWT Auth And Tracked Wallets
+
+Implemented scope:
+
+- Email/password registration and login.
+- BCrypt password hashing.
+- HMAC-SHA256 JWT access tokens.
+- Stateless Spring Security filter for protected APIs.
+- `GET /api/v1/auth/me` authenticated profile endpoint.
+- Per-user tracked wallet watchlist APIs.
+- Dashboard login, logout, and tracked-wallet controls.
+- Flyway migration for `app_users` and `user_tracked_wallets`.
+- Focused auth and tracked-wallet service unit tests.
+
+Files:
+
+- `backend/src/main/resources/db/migration/V2__auth_and_tracked_wallets.sql`
+- `backend/src/main/java/com/chainsight/auth`
+- `backend/src/main/java/com/chainsight/wallet`
+- `backend/src/main/resources/static/dashboard/index.html`
+- `backend/src/main/resources/static/dashboard/dashboard.css`
+- `backend/src/main/resources/static/dashboard/dashboard.js`
+- `backend/src/test/java/com/chainsight/auth/service/AuthServiceTest.java`
+- `backend/src/test/java/com/chainsight/wallet/service/TrackedWalletServiceTest.java`
+
+Still not implemented:
+
+- MetaMask signature login.
+- WalletConnect UI flow.
+- Roles/admin permissions.
+- Refresh tokens.
+- Manual browser verification for dashboard auth/watchlist flow.
+
 ## Later Backlog
 
 Future candidates:
 
+- MetaMask signature login.
+- WalletConnect frontend flow.
 - Top wallets analytics endpoint.
 - Token transfer extraction.
 - Token analytics API and dashboard view.
 - Retry with backoff.
 - Frontend framework migration if the static dashboard becomes limiting.
-- Authentication.
 - Role-based admin controls.

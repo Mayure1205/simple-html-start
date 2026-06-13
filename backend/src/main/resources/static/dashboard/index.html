@@ -19,6 +19,7 @@
 
       <nav class="nav-list">
         <a href="#overview" class="active">Overview</a>
+        <a href="#account">Account</a>
         <a href="#ingestion">Ingestion</a>
         <a href="#analytics">Analytics</a>
         <a href="#wallets">Wallets</a>
@@ -58,6 +59,39 @@
           <span>Failed Blocks</span>
           <strong id="failedBlockCount">-</strong>
         </article>
+      </section>
+
+      <section id="account" class="panel account-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">JWT Access</p>
+            <h3>Account</h3>
+          </div>
+          <span id="authStatusBadge" class="badge">Signed out</span>
+        </div>
+
+        <form id="authForm" class="auth-form">
+          <label>
+            <span>Email</span>
+            <input id="authEmailInput" type="email" autocomplete="email" placeholder="mayu@example.com">
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="authPasswordInput" type="password" autocomplete="current-password">
+          </label>
+          <button id="loginButton" type="submit" data-auth-action="login">Login</button>
+          <button id="registerButton" type="submit" data-auth-action="register" class="secondary">Register</button>
+          <div style="margin: 10px 0; text-align: center; border-bottom: 1px solid var(--border-color); line-height: 0.1em;">
+            <span style="background: var(--card-bg); padding: 0 10px; color: var(--text-secondary); font-size: 0.8rem;">OR</span>
+          </div>
+          <button id="web3LoginButton" type="button" class="secondary" style="border-color: #f6851b; color: #f6851b;">🦊 Connect with MetaMask</button>
+          <button id="logoutButton" type="button" class="secondary">Logout</button>
+        </form>
+
+        <div class="account-summary">
+          <span>Current User</span>
+          <strong id="currentUserEmail">-</strong>
+        </div>
       </section>
 
       <section class="split-grid">
@@ -194,12 +228,21 @@
               placeholder="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             >
           </label>
+          <label class="wallet-label-field">
+            <span>Label</span>
+            <input id="walletLabelInput" type="text" maxlength="80" autocomplete="off" placeholder="Main wallet">
+          </label>
           <label class="compact-input">
             <span>Size</span>
             <input id="walletSizeInput" type="number" min="1" max="100" value="10">
           </label>
           <button type="submit">Load Wallet</button>
+          <button id="trackWalletButton" type="button" class="secondary">Track</button>
         </form>
+
+        <div id="trackedWalletsList" class="tracked-wallets-list">
+          <p class="empty-state">Log in to track wallets</p>
+        </div>
 
         <div class="wallet-summary-grid">
           <div>

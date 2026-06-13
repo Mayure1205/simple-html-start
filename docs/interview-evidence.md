@@ -37,6 +37,9 @@ This document tracks verifiable engineering decisions and their implementation w
 | Added GitHub Actions backend CI workflow | `.github/workflows/backend-ci.yml` | `WORKFLOW ADDED - REMOTE RUN PENDING` |
 | Created benchmark report template | `docs/benchmark-report.md` | `TEMPLATE CREATED - NO MEASUREMENTS YET` |
 | Created release readiness checklist | `docs/release-checklist.md` | `CREATED - NOT TAGGED` |
+| Added JWT email/password authentication | `backend/src/main/java/com/chainsight/auth`, `backend/src/main/resources/db/migration/V2__auth_and_tracked_wallets.sql` | `UNIT TEST ADDED - RUN PENDING` |
+| Added protected tracked-wallet watchlist APIs | `backend/src/main/java/com/chainsight/wallet`, `backend/src/main/resources/db/migration/V2__auth_and_tracked_wallets.sql` | `UNIT TEST ADDED - RUN PENDING` |
+| Added dashboard login and tracked-wallet controls | `backend/src/main/resources/static/dashboard/index.html`, `backend/src/main/resources/static/dashboard/dashboard.js`, `backend/src/main/resources/static/dashboard/dashboard.css` | `CODED - MANUAL BROWSER VERIFY PENDING` |
 | Built a comprehensive test suite (Testcontainers) | | `TODO` |
 | Captured passing GitHub Actions CI run | | `TODO` |
 | Hosted on AWS EC2 via Docker Compose | | `TODO` |

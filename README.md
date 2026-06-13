@@ -6,7 +6,7 @@ Ethereum is the first data source because it is publicly accessible and generate
 
 ## Current Status
 
-Sprint 8 evidence and release readiness is in progress:
+Sprint 10 authentication and tracked-wallet readiness is in progress:
 
 - Web3j block and receipt ingestion
 - Checkpoint-aware range ingestion with restart-safety tests
@@ -14,25 +14,29 @@ Sprint 8 evidence and release readiness is in progress:
 - PostgreSQL warehouse schema managed by Flyway
 - Network analytics APIs with PostgreSQL window functions
 - Wallet transaction-history and summary analytics APIs
+- JWT email/password authentication
+- User-specific tracked wallet watchlists
 - Redis cache, distributed ingestion lock, and token-bucket API rate limiter
 - Resilience4j circuit breaker around Ethereum RPC calls
-- Static operations dashboard served by Spring Boot, including wallet lookup
+- Static operations dashboard served by Spring Boot, including wallet lookup and tracked-wallet controls
 - Production Docker Compose and Nginx deployment artifacts
 - GitHub Actions backend CI workflow file
 - Benchmark report template and release checklist
 
-Live AWS hosting, passing remote CI evidence, benchmark measurements, top-wallet analytics, token analytics, and HTTPS are still future work.
+Live AWS hosting, passing remote CI evidence, benchmark measurements, MetaMask signature login, top-wallet analytics, token analytics, and HTTPS are still future work.
 
 ## Tech Stack
 
 - Java 21
 - Spring Boot 3
+- Spring Security
 - Web3j
 - PostgreSQL
 - Redis
 - Flyway
 - JdbcTemplate for high-volume inserts
 - JPA for metadata-oriented tables
+- JWT for user API authentication
 - Resilience4j
 - Docker Compose
 

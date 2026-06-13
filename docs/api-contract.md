@@ -17,6 +17,82 @@ This is the planned REST contract for the MVP. Endpoints are versioned under `/a
 
 Returns Spring Boot Actuator health for the backend and connected dependencies.
 
+## Authentication
+
+### `POST /api/v1/auth/register`
+
+Creates an email/password user and returns a JWT access token.
+
+Request:
+
+```json
+{
+  "email": "mayu@example.com",
+  "password": "password123"
+}
+```
+
+Response:
+
+```json
+{
+  "tokenType": "Bearer",
+  "accessToken": "jwt-token",
+  "expiresInSeconds": 86400,
+  "user": {
+    "id": 1,
+    "email": "mayu@example.com",
+    "createdAt": "2026-06-13T10:00:00Z"
+  }
+}
+```
+
+### `POST /api/v1/auth/login`
+
+Authenticates an email/password user and returns a JWT access token.
+
+### `GET /api/v1/auth/me`
+
+Requires `Authorization: Bearer <token>`. Returns the authenticated user profile.
+
+## Tracked Wallets
+
+Tracked wallets are per-user watchlist entries. They do not prove wallet ownership; they only let a logged-in user save public addresses they want to monitor.
+
+### `GET /api/v1/tracked-wallets`
+
+Requires JWT. Returns the current user's tracked wallets.
+
+### `POST /api/v1/tracked-wallets`
+
+Requires JWT. Adds a wallet to the current user's watchlist.
+
+Request:
+
+```json
+{
+  "chainId": 1,
+  "walletAddress": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "label": "Main wallet"
+}
+```
+
+Response:
+
+```json
+{
+  "id": 1,
+  "chainId": 1,
+  "walletAddress": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "label": "Main wallet",
+  "createdAt": "2026-06-13T10:00:00Z"
+}
+```
+
+### `DELETE /api/v1/tracked-wallets/{walletId}`
+
+Requires JWT. Removes a tracked wallet owned by the current user.
+
 ## Ingestion
 
 The backend implements checkpoint-aware ingestion. Single-block ingestion runs synchronously. Range ingestion is accepted asynchronously: the API returns a job id with `RUNNING`, and the background job performs bounded parallel RPC extraction while database persistence remains ordered by block number.
