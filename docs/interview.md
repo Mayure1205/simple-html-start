@@ -656,13 +656,15 @@ Evidence:
 - Docs: `docs/release-checklist.md`.
 - Evidence ledger: `docs/interview-evidence.md`.
 
-### Sprint 9 - Wallet Analytics API
+### Sprint 9 - Wallet Analytics API And Dashboard Lookup
 
 Status:
 
 - Implemented in code.
 - Focused unit tests were added.
+- Static dashboard wallet lookup is wired to the new wallet APIs.
 - Tests were not run in this turn because we are avoiding heavier commands.
+- Manual browser verification is still pending.
 
 What was built:
 
@@ -672,10 +674,11 @@ What was built:
 - Ethereum address format validation.
 - Pagination validation for wallet transaction history.
 - SQL repository queries over the existing `transactions` table.
+- Dashboard wallet form, summary cards, and wallet transaction table.
 
 Why it was needed:
 
-- Network analytics explain the chain as a whole, but interview demos also need an entity-level view. Wallet analytics shows how the same warehouse can answer questions for one address without adding a new data source.
+- Network analytics explain the chain as a whole, but interview demos also need an entity-level view. Wallet analytics shows how the same warehouse can answer questions for one address without adding a new data source. The dashboard panel makes that query path demoable without Postman.
 
 Where it is used:
 
@@ -686,6 +689,9 @@ Where it is used:
 - DTOs: `backend/src/main/java/com/chainsight/analytics/dto/WalletTransactionsResponse.java`
 - DTOs: `backend/src/main/java/com/chainsight/analytics/dto/WalletSummaryResponse.java`
 - Tests: `backend/src/test/java/com/chainsight/analytics/service/WalletAnalyticsServiceTest.java`
+- Dashboard HTML: `backend/src/main/resources/static/dashboard/index.html`
+- Dashboard JavaScript: `backend/src/main/resources/static/dashboard/dashboard.js`
+- Dashboard CSS: `backend/src/main/resources/static/dashboard/dashboard.css`
 - API docs: `docs/api-contract.md`
 
 Java/Spring/PostgreSQL concepts:
@@ -696,14 +702,16 @@ Java/Spring/PostgreSQL concepts:
 - SQL `CASE WHEN` for sent/received direction and value totals.
 - B-tree indexes on `from_address` and `to_address` query paths.
 - Validation and normalization at the service boundary.
+- Browser `fetch` calls from the static dashboard.
+- DOM rendering for wallet summary and transaction-history table.
 
 Beginner-friendly explanation:
 
-The wallet endpoints let you ask, "What happened for this one address?" The history endpoint lists sent and received transactions, and the summary endpoint totals how much Wei the address sent and received.
+The wallet feature lets you ask, "What happened for this one address?" The history endpoint lists sent and received transactions, the summary endpoint totals how much Wei the address sent and received, and the dashboard lets a user type an address and view that data.
 
 Technical interview answer:
 
-Wallet analytics are implemented as SQL-backed read APIs over the indexed `transactions` table. The service validates the chain id, normalizes the address to lowercase, validates Ethereum address shape, and enforces pagination limits. The repository uses `from_address` and `to_address` filters to fetch wallet history and uses SQL `CASE WHEN` expressions to compute sent count, received count, sent value, received value, and net flow.
+Wallet analytics are implemented as SQL-backed read APIs over the indexed `transactions` table. The service validates the chain id, normalizes the address to lowercase, validates Ethereum address shape, and enforces pagination limits. The repository uses `from_address` and `to_address` filters to fetch wallet history and uses SQL `CASE WHEN` expressions to compute sent count, received count, sent value, received value, and net flow. The static dashboard calls these endpoints from `dashboard.js` and renders summary cards plus a transaction table.
 
 Possible interviewer questions:
 
@@ -714,12 +722,14 @@ Possible interviewer questions:
 | Why use SQL `CASE WHEN`? | It lets PostgreSQL classify sent/received rows and aggregate totals in the database. |
 | Is token wallet activity included? | No. Sprint 9 only covers native transaction rows already stored in `transactions`. |
 | Is wallet analytics cached? | Not yet. Redis caching is currently implemented for network analytics only. |
+| Is the wallet dashboard verified in browser? | Not yet. The static files are wired, but manual browser verification is pending. |
 
 Evidence:
 
 - Code: `WalletAnalyticsController.java`.
 - Code: `WalletAnalyticsService.java`.
 - Code: `WalletAnalyticsRepository.java`.
+- Code: `backend/src/main/resources/static/dashboard`.
 - Test added: `WalletAnalyticsServiceTest.java`.
 - API contract: `docs/api-contract.md`.
 
