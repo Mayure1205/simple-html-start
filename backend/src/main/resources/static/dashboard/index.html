@@ -4,121 +4,322 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ChainSight Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./dashboard.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Dashboard navigation">
-      <div class="brand">
-        <div class="brand-mark">CS</div>
-        <div>
-          <h1>ChainSight</h1>
-          <p>Warehouse Ops</p>
+      <div class="sidebar-head">
+        <div class="brand">
+          <div class="brand-mark">CS</div>
+          <div class="brand-copy">
+            <h1>ChainSight</h1>
+            <p>Warehouse Ops</p>
+          </div>
         </div>
+        <button id="sidebarToggle" type="button" class="sidebar-toggle" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+          </svg>
+        </button>
       </div>
 
       <nav class="nav-list">
-        <a href="#overview" class="active">Overview</a>
-        <a href="#account">Account</a>
-        <a href="#ingestion">Ingestion</a>
-        <a href="#analytics">Analytics</a>
-        <a href="#wallets">Wallets</a>
-        <a href="#failures">Failures</a>
+        <a href="#overview" class="active" data-short="O" aria-label="Overview">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11" width="7" height="10" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/>
+            </svg>
+          </span>
+          <span class="nav-label">Overview</span>
+        </a>
+        <a href="#account" data-short="A" aria-label="Account">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6.5 8-6.5S20 16 20 20"/>
+            </svg>
+          </span>
+          <span class="nav-label">Account</span>
+        </a>
+        <a href="#ingestion" data-short="I" aria-label="Ingestion">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>
+            </svg>
+          </span>
+          <span class="nav-label">Ingestion</span>
+        </a>
+        <a href="#analytics" data-short="N" aria-label="Analytics">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4v16h16"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6"/><rect x="12.5" y="7" width="2.6" height="10" rx="0.6"/><rect x="17.5" y="13" width="2.6" height="4" rx="0.6"/>
+            </svg>
+          </span>
+          <span class="nav-label">Analytics</span>
+        </a>
+        <a href="#wallets" data-short="W" aria-label="Wallets">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><circle cx="16.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"/>
+            </svg>
+          </span>
+          <span class="nav-label">Wallets</span>
+        </a>
+        <a href="#failures" data-short="F" aria-label="Failures">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3.5l9 16H3l9-16z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="16.6" r="0.7" fill="currentColor" stroke="none"/>
+            </svg>
+          </span>
+          <span class="nav-label">Failures</span>
+        </a>
       </nav>
+
+      <div class="sidebar-foot">
+        <span class="sidebar-version">v1.0.0</span>
+      </div>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div>
+        <div class="topbar-lead">
           <p class="eyebrow">Ethereum Mainnet</p>
           <h2>Historical Data Warehouse</h2>
+          <p class="topbar-subtitle">Operational dashboard for restart-safe ingestion, wallet analytics, and failed-block recovery.</p>
         </div>
         <div class="topbar-actions">
-          <label class="api-base">
-            <span>API</span>
-            <input id="apiBaseInput" type="text" autocomplete="off">
-          </label>
-          <button id="refreshButton" type="button">Refresh</button>
+          <div class="settings-menu">
+            <button type="button" class="icon-ghost" data-settings-toggle aria-label="Connection settings" aria-haspopup="true" aria-expanded="false" title="Settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+            <div class="settings-popover" data-settings-popover>
+              <p class="eyebrow">Connection</p>
+              <label class="api-base">
+                <span>API endpoint</span>
+                <input id="apiBaseInput" type="text" autocomplete="off" placeholder="http://localhost:8080">
+              </label>
+              <p class="settings-hint">Leave blank to use the server hosting this dashboard. Set a URL to point at a remote backend.</p>
+
+              <label class="api-base settings-field">
+                <span>WalletConnect Project ID</span>
+                <input id="walletConnectProjectId" type="text" autocomplete="off" placeholder="Paste your Reown project id">
+              </label>
+              <p class="settings-hint">Free at <strong>dashboard.reown.com</strong>. Enables the WalletConnect / mobile-wallet modal.</p>
+            </div>
+          </div>
+          <button id="refreshButton" type="button" class="ghost-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/>
+            </svg>
+            <span>Refresh</span>
+          </button>
         </div>
       </header>
 
-      <section id="overview" class="metrics-grid" aria-label="Ingestion status">
-        <article class="metric-card">
-          <span>Checkpoint</span>
-          <strong id="lastProcessedBlock">-</strong>
-        </article>
-        <article class="metric-card">
-          <span>Indexed Blocks</span>
-          <strong id="indexedBlocks">-</strong>
-        </article>
-        <article class="metric-card">
-          <span>Transactions</span>
-          <strong id="indexedTransactions">-</strong>
-        </article>
-        <article class="metric-card warning">
-          <span>Failed Blocks</span>
-          <strong id="failedBlockCount">-</strong>
-        </article>
+      <!-- ─────────── OVERVIEW ─────────── -->
+      <section class="screen is-active" id="overview" aria-label="Overview">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Status</p>
+            <h3>Warehouse Overview</h3>
+          </div>
+        </div>
+
+        <div class="metrics-grid">
+          <article class="metric-card">
+            <div class="metric-top">
+              <span class="metric-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>
+              </span>
+              <span class="metric-label">Checkpoint</span>
+            </div>
+            <strong id="lastProcessedBlock">-</strong>
+            <span class="metric-caption">Last processed block</span>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-top">
+              <span class="metric-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+              </span>
+              <span class="metric-label">Indexed Blocks</span>
+            </div>
+            <strong id="indexedBlocks">-</strong>
+            <span class="metric-caption">Total blocks stored</span>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-top">
+              <span class="metric-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h12l-3-3"/><path d="M17 17H5l3 3"/></svg>
+              </span>
+              <span class="metric-label">Transactions</span>
+            </div>
+            <strong id="indexedTransactions">-</strong>
+            <span class="metric-caption">Total rows ingested</span>
+          </article>
+
+          <article class="metric-card warning">
+            <div class="metric-top">
+              <span class="metric-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l9 16H3l9-16z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="16.6" r="0.7" fill="currentColor" stroke="none"/></svg>
+              </span>
+              <span class="metric-label">Failed Blocks</span>
+            </div>
+            <strong id="failedBlockCount">-</strong>
+            <span class="metric-caption">Pending retry</span>
+          </article>
+        </div>
+
+        <section class="panel chart-panel">
+          <div class="panel-header tight">
+            <div>
+              <p class="eyebrow">Network</p>
+              <h3>Transactions per day</h3>
+            </div>
+          </div>
+          <div class="overview-chart-wrap">
+            <canvas id="overviewChart" aria-label="Daily transactions chart"></canvas>
+          </div>
+        </section>
+
+        <div class="overview-showcase">
+          <section class="panel feed-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Activity</p>
+                <h3>Latest Events</h3>
+              </div>
+            </div>
+            <ul id="activityLog" class="activity-log"></ul>
+          </section>
+
+          <section class="panel warehouse-panel" aria-label="Warehouse pipeline">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Pipeline</p>
+                <h3>ETL Flow</h3>
+              </div>
+            </div>
+            <div class="warehouse-flow">
+              <div><span>RPC</span><strong>Ethereum blocks</strong></div>
+              <div><span>Workers</span><strong>Async range jobs</strong></div>
+              <div><span>Warehouse</span><strong>PostgreSQL rows</strong></div>
+              <div><span>APIs</span><strong>Dashboard queries</strong></div>
+            </div>
+          </section>
+        </div>
       </section>
 
-      <section id="account" class="panel account-panel">
-        <div class="panel-header">
+      <!-- ─────────── ACCOUNT ─────────── -->
+      <section class="screen" id="account" aria-label="Account">
+        <div class="screen-head">
           <div>
-            <p class="eyebrow">JWT Access</p>
-            <h3>Account</h3>
+            <p class="eyebrow">Access</p>
+            <h3>Sign in</h3>
           </div>
           <span id="authStatusBadge" class="badge">Signed out</span>
         </div>
 
-        <form id="authForm" class="auth-form">
-          <label>
-            <span>Email</span>
-            <input id="authEmailInput" type="email" autocomplete="email" placeholder="mayu@example.com">
-          </label>
-          <label>
-            <span>Password</span>
-            <input id="authPasswordInput" type="password" autocomplete="current-password">
-          </label>
-          <button id="loginButton" type="submit" data-auth-action="login">Login</button>
-          <button id="registerButton" type="submit" data-auth-action="register" class="secondary">Register</button>
-          <div style="margin: 10px 0; text-align: center; border-bottom: 1px solid var(--border-color); line-height: 0.1em;">
-            <span style="background: var(--card-bg); padding: 0 10px; color: var(--text-secondary); font-size: 0.8rem;">OR</span>
+        <div class="account-status">
+          <div class="account-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c0-3.6 3.4-5.6 7-5.6S19 16.4 19 20"/></svg>
           </div>
-          <button id="web3LoginButton" type="button" class="secondary" style="border-color: #f6851b; color: #f6851b;">🦊 Connect with MetaMask</button>
-          <button id="logoutButton" type="button" class="secondary">Logout</button>
-        </form>
+          <div class="account-status-copy">
+            <span>Signed in as</span>
+            <strong id="currentUserEmail">-</strong>
+          </div>
+          <button id="logoutButton" type="button" class="secondary compact-action" hidden>Disconnect</button>
+        </div>
 
-        <div class="account-summary">
-          <span>Current User</span>
-          <strong id="currentUserEmail">-</strong>
+        <div class="account-grid" id="accountGrid">
+          <div class="panel sub-panel">
+            <div class="panel-header tight">
+              <div>
+                <p class="eyebrow">Email</p>
+                <h3>Email sign in</h3>
+              </div>
+            </div>
+            <form id="authForm" class="auth-form">
+              <label>
+                <span>Email</span>
+                <input id="authEmailInput" type="email" autocomplete="email" placeholder="you@example.com">
+              </label>
+              <label>
+                <span>Password</span>
+                <input id="authPasswordInput" type="password" autocomplete="current-password" placeholder="••••••••">
+              </label>
+              <div class="auth-actions">
+                <button id="loginButton" type="submit" data-auth-action="login">Login</button>
+                <button id="registerButton" type="submit" data-auth-action="register" class="secondary">Register</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel sub-panel wallet-signin-panel">
+            <div class="panel-header tight">
+              <div>
+                <p class="eyebrow">Web3</p>
+                <h3>Wallet sign in</h3>
+              </div>
+            </div>
+            <p class="sub-note">Connect a wallet to sign in securely with a single signature.</p>
+            <div class="wallet-signin">
+              <div class="wallet-signin-state">
+                <span class="field-label">Wallet</span>
+                <strong id="walletSigninLabel">Not connected</strong>
+              </div>
+              <button id="walletConnectButton" type="button" class="accent">Connect wallet</button>
+            </div>
+          </div>
         </div>
       </section>
 
-      <section class="split-grid">
-        <section id="ingestion" class="panel">
-          <div class="panel-header">
+      <!-- ─────────── INGESTION ─────────── -->
+      <section class="screen" id="ingestion" aria-label="Ingestion">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Indexing</p>
+            <h3>Ingestion Control</h3>
+          </div>
+          <span id="jobStatusBadge" class="badge">Idle</span>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header tight">
             <div>
-              <p class="eyebrow">Range Job</p>
-              <h3>Ingestion Control</h3>
+              <p class="eyebrow">New job</p>
+              <h3>Configure block range</h3>
             </div>
-            <span id="jobStatusBadge" class="badge">Idle</span>
           </div>
 
-          <form id="ingestionForm" class="form-grid">
-            <label>
+          <form id="ingestionForm" class="ingest-form">
+            <label class="ingest-chain">
               <span>Chain ID</span>
-              <input id="chainIdInput" type="number" min="1" value="1">
+              <select id="chainIdInput">
+                <option value="1">Ethereum Mainnet (1)</option>
+              </select>
             </label>
             <label>
               <span>Start Block</span>
-              <input id="startBlockInput" type="number" min="0" placeholder="19999000">
+              <input id="startBlockInput" type="number" min="0" value="20000000" placeholder="19999000">
             </label>
             <label>
               <span>End Block</span>
-              <input id="endBlockInput" type="number" min="0" placeholder="20000000">
+              <input id="endBlockInput" type="number" min="0" value="20000005" placeholder="20000000">
             </label>
-            <button type="submit">Start Job</button>
+            <button type="submit" class="ingest-submit">Start Job</button>
           </form>
+
+          <div class="job-progress" id="jobProgressWrap" aria-hidden="true">
+            <div id="jobProgressBar" class="job-progress-fill"></div>
+          </div>
 
           <div class="job-summary">
             <div>
@@ -138,16 +339,19 @@
               <strong id="transactionsInserted">-</strong>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="analytics" class="panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Window Functions</p>
-              <h3>Daily Network Metrics</h3>
-            </div>
+      <!-- ─────────── ANALYTICS ─────────── -->
+      <section class="screen" id="analytics" aria-label="Analytics">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Network</p>
+            <h3>Daily Network Metrics</h3>
           </div>
+        </div>
 
+        <div class="panel">
           <form id="analyticsForm" class="date-row">
             <label>
               <span>From</span>
@@ -161,16 +365,14 @@
           </form>
 
           <div class="chart-wrap">
-            <canvas id="dailyChart" width="900" height="300" aria-label="Daily transaction chart"></canvas>
+            <canvas id="dailyChart" width="900" height="240" aria-label="Daily transaction chart"></canvas>
           </div>
-        </section>
-      </section>
+        </div>
 
-      <section class="split-grid lower">
         <section class="panel">
           <div class="panel-header">
             <div>
-              <p class="eyebrow">Ranked By Value</p>
+              <p class="eyebrow">Transactions</p>
               <h3>Largest Transactions</h3>
             </div>
             <label class="compact-input">
@@ -195,105 +397,280 @@
             </table>
           </div>
         </section>
-
-        <section id="failures" class="panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Retry Queue</p>
-              <h3>Failed Blocks</h3>
-            </div>
-            <button id="failedBlocksButton" type="button">Reload</button>
-          </div>
-          <div id="failedBlocksList" class="failed-list">
-            <p class="empty-state">No failed blocks loaded</p>
-          </div>
-        </section>
       </section>
 
-      <section id="wallets" class="panel wallet-panel">
-        <div class="panel-header">
+      <!-- ─────────── WALLETS ─────────── -->
+      <section class="screen" id="wallets" aria-label="Wallets">
+        <div class="screen-head">
           <div>
-            <p class="eyebrow">Address Analytics</p>
+            <p class="eyebrow">Wallets</p>
             <h3>Wallet Activity</h3>
           </div>
         </div>
 
-        <form id="walletForm" class="wallet-form">
-          <label class="wallet-address-field">
-            <span>Wallet Address</span>
-            <input
-              id="walletAddressInput"
-              type="text"
-              autocomplete="off"
-              placeholder="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            >
-          </label>
-          <label class="wallet-label-field">
-            <span>Label</span>
-            <input id="walletLabelInput" type="text" maxlength="80" autocomplete="off" placeholder="Main wallet">
-          </label>
-          <label class="compact-input">
-            <span>Size</span>
-            <input id="walletSizeInput" type="number" min="1" max="100" value="10">
-          </label>
-          <button type="submit">Load Wallet</button>
-          <button id="trackWalletButton" type="button" class="secondary">Track</button>
-        </form>
+        <div class="panel">
+          <form id="walletForm" class="wallet-form">
+            <label class="wallet-address-field">
+              <span>Wallet Address</span>
+              <input
+                id="walletAddressInput"
+                type="text"
+                autocomplete="off"
+                placeholder="0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              >
+            </label>
+            <label class="wallet-label-field">
+              <span>Label</span>
+              <input id="walletLabelInput" type="text" maxlength="80" autocomplete="off" placeholder="Main wallet">
+            </label>
+            <label class="compact-input">
+              <span>Size</span>
+              <input id="walletSizeInput" type="number" min="1" max="100" value="10">
+            </label>
+            <button type="submit">Load Wallet</button>
+            <button id="trackWalletButton" type="button" class="accent">Track</button>
+          </form>
 
-        <div id="trackedWalletsList" class="tracked-wallets-list">
-          <p class="empty-state">Log in to track wallets</p>
-        </div>
-
-        <div class="wallet-summary-grid">
-          <div>
-            <span>Sent</span>
-            <strong id="walletSentCount">-</strong>
-            <small id="walletSentValue">-</small>
-          </div>
-          <div>
-            <span>Received</span>
-            <strong id="walletReceivedCount">-</strong>
-            <small id="walletReceivedValue">-</small>
-          </div>
-          <div>
-            <span>Net Flow Wei</span>
-            <strong id="walletNetFlow">-</strong>
-          </div>
-          <div>
-            <span>Last Activity</span>
-            <strong id="walletLastActivity">-</strong>
+          <div id="trackedWalletsList" class="tracked-wallets-list">
+            <p class="empty-state">Log in to track wallets</p>
           </div>
         </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Direction</th>
-                <th>Hash</th>
-                <th>Counterparty</th>
-                <th>Block</th>
-                <th>Value Wei</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="walletTransactionsBody">
-              <tr><td colspan="6" class="empty-cell">No wallet loaded</td></tr>
-            </tbody>
-          </table>
+        <div class="panel">
+          <div class="panel-header tight">
+            <div>
+              <p class="eyebrow">Summary</p>
+              <h3>Flow &amp; balance</h3>
+            </div>
+          </div>
+          <div class="wallet-summary-layout">
+            <div class="wallet-summary-grid">
+              <div>
+                <span>Sent</span>
+                <strong id="walletSentCount">-</strong>
+                <small id="walletSentValue">-</small>
+              </div>
+              <div>
+                <span>Received</span>
+                <strong id="walletReceivedCount">-</strong>
+                <small id="walletReceivedValue">-</small>
+              </div>
+              <div>
+                <span>Net Flow Wei</span>
+                <strong id="walletNetFlow">-</strong>
+              </div>
+              <div>
+                <span>Last Activity</span>
+                <strong id="walletLastActivity">-</strong>
+              </div>
+            </div>
+            <div class="wallet-flow-card">
+              <p class="eyebrow">Sent vs Received</p>
+              <div class="donut-wrap">
+                <canvas id="walletFlowChart" aria-label="Wallet sent versus received chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Direction</th>
+                  <th>Hash</th>
+                  <th>Counterparty</th>
+                  <th>Block</th>
+                  <th>Value Wei</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="walletTransactionsBody">
+                <tr><td colspan="6" class="empty-cell">No wallet loaded</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <section class="activity-band" aria-label="Activity log">
-        <div>
-          <p class="eyebrow">Activity</p>
-          <h3>Latest Events</h3>
+      <!-- ─────────── FAILURES ─────────── -->
+      <section class="screen" id="failures" aria-label="Failures">
+        <div class="screen-head">
+          <div>
+            <p class="eyebrow">Recovery</p>
+            <h3>Failed Blocks</h3>
+          </div>
+          <button id="failedBlocksButton" type="button" class="secondary">Reload</button>
         </div>
-        <ul id="activityLog"></ul>
+
+        <div class="panel">
+          <div id="failedBlocksList" class="failed-list">
+            <p class="empty-state">No failed blocks loaded</p>
+          </div>
+        </div>
       </section>
     </main>
   </div>
 
+  <div id="walletModal" class="modal-backdrop" hidden>
+    <section class="wallet-modal" role="dialog" aria-modal="true" aria-labelledby="walletModalTitle">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow">Wallet sign in</p>
+          <h3 id="walletModalTitle">Connect Wallet</h3>
+          <p class="modal-subtitle">Choose a wallet provider to sign in securely</p>
+        </div>
+        <button id="walletModalClose" type="button" class="icon-button" aria-label="Close wallet provider dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+        </button>
+      </header>
+
+      <div id="walletProviderList" class="wallet-provider-list"></div>
+
+      <ol id="walletStepList" class="wallet-step-list" hidden>
+        <li data-wallet-step="detected"><span></span>Wallet detected</li>
+        <li data-wallet-step="address"><span></span>Address connected</li>
+        <li data-wallet-step="signature"><span></span>Signature requested</li>
+        <li data-wallet-step="session"><span></span>JWT session created</li>
+      </ol>
+
+      <p id="walletModalMessage" class="wallet-modal-message"></p>
+    </section>
+  </div>
+
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="./dashboard.js"></script>
+
+  <!-- Purely presentational enhancements. Does not modify dashboard.js logic or DOM contracts;
+       it only reads element text/state and adds CSS classes for visual feedback + screen routing. -->
+  <script>
+    (function () {
+      // 1) Status badge color variants driven by their text content.
+      function applyBadgeVariant(el) {
+        el.dataset.status = el.textContent.trim().toUpperCase();
+      }
+      document.querySelectorAll('.badge').forEach(function (el) {
+        applyBadgeVariant(el);
+        new MutationObserver(function () { applyBadgeVariant(el); })
+          .observe(el, { childList: true, characterData: true, subtree: true });
+      });
+
+      // 2) Animate the ingestion progress bar while a job is Running.
+      var jobBadge = document.getElementById('jobStatusBadge');
+      var ingestionSection = document.getElementById('ingestion');
+      if (jobBadge && ingestionSection) {
+        new MutationObserver(function () {
+          var running = jobBadge.textContent.trim().toUpperCase() === 'RUNNING';
+          ingestionSection.classList.toggle('job-is-running', running);
+        }).observe(jobBadge, { childList: true, characterData: true, subtree: true });
+      }
+
+      // 3) Sidebar router — show one screen at a time without touching dashboard.js.
+      var navLinks = Array.prototype.slice.call(document.querySelectorAll('.nav-list a[href^="#"]'));
+      var screens = Array.prototype.slice.call(document.querySelectorAll('.screen'));
+      var ids = screens.map(function (s) { return s.id; });
+
+      function showScreen(id) {
+        if (ids.indexOf(id) === -1) { id = 'overview'; }
+        screens.forEach(function (s) { s.classList.toggle('is-active', s.id === id); });
+        navLinks.forEach(function (a) {
+          var on = a.getAttribute('href') === '#' + id;
+          a.classList.toggle('active', on);
+          if (on) { a.setAttribute('aria-current', 'page'); } else { a.removeAttribute('aria-current'); }
+        });
+        // The chart canvas needs a visible width to size correctly; re-fit on entry.
+        if (id === 'analytics') { window.dispatchEvent(new Event('resize')); }
+      }
+
+      navLinks.forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          var id = a.getAttribute('href').slice(1);
+          if (history.replaceState) { history.replaceState(null, '', '#' + id); }
+          showScreen(id);
+          document.querySelector('.workspace').scrollTo({ top: 0, behavior: 'smooth' });
+        });
+      });
+
+      showScreen((location.hash || '#overview').slice(1));
+
+      // 4) Surface error events as transient toasts so they are visible on any screen.
+      var toastStack = document.getElementById('toastStack');
+      var activityLog = document.getElementById('activityLog');
+      if (toastStack && activityLog) {
+        new MutationObserver(function (mutations) {
+          mutations.forEach(function (m) {
+            Array.prototype.slice.call(m.addedNodes).forEach(function (node) {
+              if (node.nodeType === 1 && node.classList.contains('status-fail')) {
+                showToast(node.textContent);
+              }
+            });
+          });
+        }).observe(activityLog, { childList: true });
+      }
+
+      // 5) Settings popover — keeps the API endpoint config out of the header.
+      var settingsMenu = document.querySelector('.settings-menu');
+      if (settingsMenu) {
+        var settingsToggle = settingsMenu.querySelector('[data-settings-toggle]');
+        var settingsPopover = settingsMenu.querySelector('[data-settings-popover]');
+        var setSettingsOpen = function (open) {
+          settingsPopover.classList.toggle('is-open', open);
+          settingsToggle.setAttribute('aria-expanded', String(open));
+        };
+        settingsToggle.addEventListener('click', function (e) {
+          e.stopPropagation();
+          setSettingsOpen(!settingsPopover.classList.contains('is-open'));
+        });
+        document.addEventListener('click', function (e) {
+          if (!settingsMenu.contains(e.target)) { setSettingsOpen(false); }
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') { setSettingsOpen(false); }
+        });
+      }
+
+      // 6) Color-code wallet provider status labels (re-runs as the list re-renders).
+      var providerList = document.getElementById('walletProviderList');
+      if (providerList) {
+        var tagProviderStates = function () {
+          providerList.querySelectorAll('.provider-state').forEach(function (el) {
+            var t = el.textContent.trim().toLowerCase();
+            var kind = '';
+            if (/installed|detected|ready|connected/.test(t)) { kind = 'ok'; }
+            else if (/setup/.test(t)) { kind = 'warn'; }
+            else if (/mobile|qr/.test(t)) { kind = 'info'; }
+            if (kind) { el.dataset.stateKind = kind; } else { el.removeAttribute('data-state-kind'); }
+          });
+        };
+        new MutationObserver(tagProviderStates).observe(providerList, { childList: true, subtree: true });
+        tagProviderStates();
+      }
+
+      // 7) WalletConnect Project ID — persist to the localStorage key dashboard.js reads.
+      var wcInput = document.getElementById('walletConnectProjectId');
+      if (wcInput) {
+        var WC_KEY = 'chainsightWalletConnectProjectId';
+        wcInput.value = localStorage.getItem(WC_KEY) || '';
+        wcInput.addEventListener('input', function () {
+          var v = wcInput.value.trim();
+          if (v) { localStorage.setItem(WC_KEY, v); } else { localStorage.removeItem(WC_KEY); }
+        });
+      }
+
+      function showToast(text) {
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-error';
+        toast.textContent = text;
+        toastStack.appendChild(toast);
+        requestAnimationFrame(function () { toast.classList.add('show'); });
+        setTimeout(function () {
+          toast.classList.remove('show');
+          setTimeout(function () { toast.remove(); }, 240);
+        }, 3600);
+      }
+    })();
+  </script>
 </body>
 </html>
