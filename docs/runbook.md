@@ -89,6 +89,10 @@ Do not claim measured performance, passing GitHub Actions, or a `v1.0.0` release
 | `REDIS_PORT` | `6379` | Redis port |
 | `JWT_SECRET` | local dev secret | JWT signing secret; use a long random value outside local dev |
 | `JWT_EXPIRES_IN_SECONDS` | `86400` | JWT access token lifetime |
+| `ETH_STALE_JOB_TIMEOUT_SECONDS` | `900` | Startup cleanup window for stale `PENDING` / `RUNNING` ingestion jobs |
+| `AUTH_RATE_LIMIT_CAPACITY` | `10` | Stricter token-bucket capacity for login/register/nonce/wallet-login |
+| `AUTH_RATE_LIMIT_REFILL_TOKENS_PER_SECOND` | `1` | Auth endpoint token refill rate |
+| `MANAGEMENT_HEALTH_SHOW_DETAILS` | `when_authorized` | Health endpoint detail exposure mode |
 | `ETH_RPC_URL` | `https://cloudflare-eth.com` | Ethereum JSON-RPC URL |
 
 Never commit provider URLs containing API keys.
@@ -122,7 +126,8 @@ Also verify:
 - Docker Compose starts PostgreSQL and Redis.
 - Backend health endpoint is up.
 - Flyway migrations apply cleanly on a fresh database.
-- `docs/interview-evidence.md` is updated for any new claim.
+- The relevant `docs/interview/` topic file is updated for any new implemented feature.
+- `docs/interview/interview_evidence.md` is updated for any new proof-backed claim.
 
 ## Troubleshooting
 

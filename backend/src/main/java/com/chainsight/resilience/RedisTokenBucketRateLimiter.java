@@ -38,13 +38,17 @@ public class RedisTokenBucketRateLimiter {
     }
 
     public boolean allowRequest(String bucketId) {
+        return allowRequest(bucketId, capacity, refillTokensPerSecond);
+    }
+
+    public boolean allowRequest(String bucketId, long requestCapacity, long requestRefillTokensPerSecond) {
         try {
             List<String> keys = List.of(tokensKey(bucketId), timestampKey(bucketId));
             List<?> result = redisTemplate.execute(
                     tokenBucketScript,
                     keys,
-                    String.valueOf(capacity),
-                    String.valueOf(refillTokensPerSecond),
+                    String.valueOf(requestCapacity),
+                    String.valueOf(requestRefillTokensPerSecond),
                     String.valueOf(Instant.now().getEpochSecond()),
                     "1",
                     String.valueOf(keyTtlSeconds)

@@ -18,6 +18,7 @@ import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Repository
@@ -42,7 +43,8 @@ public class BlockJdbcRepository {
             return ps;
         }, keyHolder);
 
-        Number key = keyHolder.getKey();
+        Map<String, Object> keys = keyHolder.getKeys();
+        Number key = keys == null ? keyHolder.getKey() : (Number) keys.get("id");
         if (key == null) {
             throw new IllegalStateException("Database did not return an ingestion job id");
         }
@@ -61,6 +63,14 @@ public class BlockJdbcRepository {
                      "SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, failure_reason = ? " +
                      "WHERE id = ?";
         jdbcTemplate.update(sql, failureReason, jobId);
+    }
+
+    public int markStaleActiveJobsFailed(Instant startedBefore, String failureReason) {
+        String sql = "UPDATE ingestion_jobs " +
+                     "SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, failure_reason = ? " +
+                     "WHERE status IN ('PENDING', 'RUNNING') " +
+                     "AND started_at < ?";
+        return jdbcTemplate.update(sql, trimFailureReason(failureReason), Timestamp.from(startedBefore));
     }
 
     public void recordFailedBlock(long chainId, BigInteger blockNumber, String failureReason) {

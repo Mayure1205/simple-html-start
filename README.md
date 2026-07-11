@@ -6,7 +6,7 @@ Ethereum is the first data source because it is publicly accessible and generate
 
 ## Current Status
 
-Sprint 10 authentication and tracked-wallet readiness is in progress:
+Current implemented scope includes:
 
 - Web3j block and receipt ingestion
 - Checkpoint-aware range ingestion with restart-safety tests
@@ -16,6 +16,7 @@ Sprint 10 authentication and tracked-wallet readiness is in progress:
 - Wallet transaction-history and summary analytics APIs
 - JWT email/password authentication
 - User-specific tracked wallet watchlists
+- Wallet-signature login challenge handling and provider-neutral wallet sign-in UI
 - Redis cache, distributed ingestion lock, and token-bucket API rate limiter
 - Resilience4j circuit breaker around Ethereum RPC calls
 - Static operations dashboard served by Spring Boot, including wallet lookup and tracked-wallet controls
@@ -23,7 +24,7 @@ Sprint 10 authentication and tracked-wallet readiness is in progress:
 - GitHub Actions backend CI workflow file
 - Benchmark report template and release checklist
 
-Live AWS hosting, passing remote CI evidence, benchmark measurements, MetaMask signature login, top-wallet analytics, token analytics, and HTTPS are still future work.
+Live AWS hosting, passing remote CI evidence, benchmark measurements, production-verified wallet login, top-wallet analytics, token analytics, and HTTPS are still future work.
 
 ## Tech Stack
 
@@ -97,7 +98,8 @@ http://localhost:8080/dashboard/index.html
 - [Database ERD](docs/database-erd.md)
 - [API Contract](docs/api-contract.md)
 - [Runbook](docs/runbook.md)
-- [Evidence Ledger](docs/interview-evidence.md)
+- [Interview Index](docs/interview.md)
+- [Interview Evidence](docs/interview/interview_evidence.md)
 - [Benchmark Report](docs/benchmark-report.md)
 - [Release Checklist](docs/release-checklist.md)
 - [ADR-001: Modular Monolith First](docs/adrs/ADR-001-start-with-modular-monolith.md)
@@ -113,4 +115,4 @@ Use this framing in interviews:
 - Current local workflow: commit focused changes directly on `main`.
 - Use conventional commits, for example `feat(ingestion): add block persistence`.
 - Keep each commit focused on one milestone.
-- Update `docs/interview-evidence.md` whenever a claim becomes demonstrable in code, tests, benchmarks, CI, or deployment.
+- Update the relevant `docs/interview/` topic file after every meaningful change, and update `docs/interview/interview_evidence.md` whenever a claim becomes demonstrable in code, tests, benchmarks, CI, or deployment.

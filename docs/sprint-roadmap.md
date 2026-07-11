@@ -78,8 +78,9 @@ Files:
 - `.github/workflows/backend-ci.yml`
 - `docs/benchmark-report.md`
 - `docs/release-checklist.md`
-- `docs/interview-evidence.md`
+- `docs/interview/interview_evidence.md`
 - `docs/interview.md`
+- Topic files under `docs/interview/`
 
 Still not implemented:
 
@@ -125,7 +126,7 @@ Still not implemented:
 - Token transfer analytics.
 - Redis caching for wallet analytics.
 
-## Current Sprint 10 - JWT Auth And Tracked Wallets
+## Sprint 10 - JWT Auth And Tracked Wallets
 
 Implemented scope:
 
@@ -150,20 +151,55 @@ Files:
 - `backend/src/test/java/com/chainsight/auth/service/AuthServiceTest.java`
 - `backend/src/test/java/com/chainsight/wallet/service/TrackedWalletServiceTest.java`
 
-Still not implemented:
+Moved to Sprint 11 / follow-up:
 
-- MetaMask signature login.
-- WalletConnect UI flow.
+- Wallet-signature login hardening and provider-neutral UI.
+- Production-verified WalletConnect login with a Reown Project ID.
 - Roles/admin permissions.
 - Refresh tokens.
 - Manual browser verification for dashboard auth/watchlist flow.
+
+## Current Sprint 11 - Wallet Sign-In UI And Auth Hardening
+
+Implemented scope:
+
+- Wallet nonce endpoint returns the exact sign-in message to sign.
+- Wallet-login endpoint verifies `personal_sign` signatures and issues JWTs.
+- Wallet address and malformed signature validation in auth service.
+- Dashboard account panel no longer exposes implementation labels.
+- Provider-neutral wallet chooser for injected browser wallets.
+- WalletConnect/Reown setup path for QR/mobile wallets.
+- Collapsible sidebar with saved local preference.
+- Focused auth service tests updated for wallet login cases.
+- Static UI browser check for provider modal and sidebar collapse.
+
+Files:
+
+- `backend/src/main/resources/db/migration/V3__add_wallet_auth.sql`
+- `backend/src/main/java/com/chainsight/auth/controller/AuthController.java`
+- `backend/src/main/java/com/chainsight/auth/service/AuthService.java`
+- `backend/src/main/java/com/chainsight/auth/dto/NonceResponse.java`
+- `backend/src/main/java/com/chainsight/auth/security/SecurityConfig.java`
+- `backend/src/main/resources/static/dashboard/index.html`
+- `backend/src/main/resources/static/dashboard/dashboard.css`
+- `backend/src/main/resources/static/dashboard/dashboard.js`
+- `backend/src/test/java/com/chainsight/auth/service/AuthServiceTest.java`
+
+Still not implemented:
+
+- Real wallet verification with backend, Redis, and PostgreSQL running.
+- Reown/WalletConnect Project ID configuration for actual QR/mobile login.
+- Full SIWE-compatible message format.
+- Refresh tokens.
+- Roles/admin permissions.
+- Password reset.
 
 ## Later Backlog
 
 Future candidates:
 
-- MetaMask signature login.
-- WalletConnect frontend flow.
+- Full SIWE-compliant wallet login.
+- Production-verified WalletConnect login.
 - Top wallets analytics endpoint.
 - Token transfer extraction.
 - Token analytics API and dashboard view.

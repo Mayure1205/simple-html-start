@@ -3,7 +3,9 @@ package com.chainsight.auth.controller;
 import com.chainsight.auth.dto.AuthResponse;
 import com.chainsight.auth.dto.CurrentUserResponse;
 import com.chainsight.auth.dto.LoginRequest;
+import com.chainsight.auth.dto.NonceResponse;
 import com.chainsight.auth.dto.RegisterRequest;
+import com.chainsight.auth.dto.WalletLoginRequest;
 import com.chainsight.auth.model.AuthenticatedUserPrincipal;
 import com.chainsight.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -11,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,13 +39,12 @@ public class AuthController {
     }
 
     @GetMapping("/nonce")
-    public ResponseEntity<com.chainsight.auth.dto.NonceResponse> getNonce(@org.springframework.web.bind.annotation.RequestParam String walletAddress) {
-        String nonce = authService.generateNonce(walletAddress);
-        return ResponseEntity.ok(new com.chainsight.auth.dto.NonceResponse(nonce));
+    public ResponseEntity<NonceResponse> getNonce(@RequestParam String walletAddress) {
+        return ResponseEntity.ok(authService.createWalletLoginChallenge(walletAddress));
     }
 
     @PostMapping("/wallet-login")
-    public ResponseEntity<AuthResponse> walletLogin(@Valid @RequestBody com.chainsight.auth.dto.WalletLoginRequest request) {
+    public ResponseEntity<AuthResponse> walletLogin(@Valid @RequestBody WalletLoginRequest request) {
         return ResponseEntity.ok(authService.walletLogin(request));
     }
 

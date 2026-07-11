@@ -2,7 +2,7 @@ spring:
   application:
     name: chainsight-backend
   datasource:
-    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:chainsight}
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5433}/${POSTGRES_DB:chainsight}
     username: ${POSTGRES_USER:chainsight_user}
     password: ${POSTGRES_PASSWORD:chainsight_password}
     driver-class-name: org.postgresql.Driver
@@ -33,6 +33,7 @@ ethereum:
   rpc-url: ${ETH_RPC_URL:https://cloudflare-eth.com}
   ingestion:
     max-range-size: ${ETH_INGESTION_MAX_RANGE_SIZE:100}
+    stale-job-timeout-seconds: ${ETH_STALE_JOB_TIMEOUT_SECONDS:900}
     job-coordinator:
       core-pool-size: ${ETH_JOB_COORDINATOR_CORE_POOL_SIZE:1}
       max-pool-size: ${ETH_JOB_COORDINATOR_MAX_POOL_SIZE:2}
@@ -63,6 +64,8 @@ resilience:
   rate-limit:
     capacity: ${API_RATE_LIMIT_CAPACITY:60}
     refill-tokens-per-second: ${API_RATE_LIMIT_REFILL_TOKENS_PER_SECOND:1}
+    auth-capacity: ${AUTH_RATE_LIMIT_CAPACITY:10}
+    auth-refill-tokens-per-second: ${AUTH_RATE_LIMIT_REFILL_TOKENS_PER_SECOND:1}
     key-ttl-seconds: ${API_RATE_LIMIT_KEY_TTL_SECONDS:120}
 
 management:
@@ -72,7 +75,7 @@ management:
         include: health,info,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when_authorized}
 
 resilience4j:
   circuitbreaker:

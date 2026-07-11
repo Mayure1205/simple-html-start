@@ -3,6 +3,7 @@ package com.chainsight.auth.service;
 import com.chainsight.auth.dto.AuthResponse;
 import com.chainsight.auth.dto.CurrentUserResponse;
 import com.chainsight.auth.dto.LoginRequest;
+import com.chainsight.auth.dto.NonceResponse;
 import com.chainsight.auth.dto.RegisterRequest;
 import com.chainsight.auth.dto.WalletLoginRequest;
 import com.chainsight.auth.model.AuthenticatedUser;
@@ -22,12 +23,14 @@ import java.security.SignatureException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Service
 public class AuthService {
 
     private static final String NONCE_PREFIX = "chainsight:auth:nonce:";
     private static final Duration NONCE_TTL = Duration.ofMinutes(5);
+    private static final Pattern ETHEREUM_ADDRESS_PATTERN = Pattern.compile("^0x[0-9a-fA-F]{40}$");
 
     private final AuthRepository repository;
     private final PasswordEncoder passwordEncoder;
@@ -42,14 +45,14 @@ public class AuthService {
         this.redisTemplate = redisTemplate;
     }
 
-    public String generateNonce(String walletAddress) {
+    public NonceResponse createWalletLoginChallenge(String walletAddress) {
         String normalizedWallet = normalizeWallet(walletAddress);
         byte[] nonceBytes = new byte[16];
         secureRandom.nextBytes(nonceBytes);
         String nonce = Numeric.toHexStringNoPrefix(nonceBytes);
         
         redisTemplate.opsForValue().set(NONCE_PREFIX + normalizedWallet, nonce, NONCE_TTL);
-        return nonce;
+        return new NonceResponse(nonce, walletLoginMessage(normalizedWallet, nonce));
     }
 
     public AuthResponse walletLogin(WalletLoginRequest request) {
@@ -60,7 +63,7 @@ public class AuthService {
             throw new IllegalArgumentException("Nonce expired or not found. Please request a new nonce.");
         }
 
-        String expectedMessage = "Sign this message to log in to ChainSight. Nonce: " + expectedNonce;
+        String expectedMessage = walletLoginMessage(normalizedWallet, expectedNonce);
         
         String recoveredAddress = recoverAddress(expectedMessage, request.signature());
         if (!normalizedWallet.equalsIgnoreCase(recoveredAddress)) {
@@ -78,12 +81,28 @@ public class AuthService {
     }
 
     private String recoverAddress(String originalMessage, String signature) {
+        if (signature == null || signature.isBlank()) {
+            throw new IllegalArgumentException("signature is required");
+        }
+
         byte[] messageBytes = originalMessage.getBytes(StandardCharsets.UTF_8);
-        byte[] signatureBytes = Numeric.hexStringToByteArray(signature);
+        byte[] signatureBytes;
+        try {
+            signatureBytes = Numeric.hexStringToByteArray(signature);
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("Invalid signature format", ex);
+        }
+
+        if (signatureBytes.length != 65) {
+            throw new IllegalArgumentException("signature must be 65 bytes");
+        }
 
         byte v = signatureBytes[64];
         if (v < 27) {
             v += 27;
+        }
+        if (v != 27 && v != 28) {
+            throw new IllegalArgumentException("signature recovery id must be 27 or 28");
         }
 
         Sign.SignatureData sd = new Sign.SignatureData(
@@ -98,6 +117,16 @@ public class AuthService {
         } catch (SignatureException e) {
             throw new IllegalArgumentException("Invalid signature format", e);
         }
+    }
+
+    static String walletLoginMessage(String normalizedWallet, String nonce) {
+        return """
+                ChainSight wants you to sign in with your Ethereum wallet:
+                %s
+
+                This signature proves wallet ownership for dashboard login.
+                Nonce: %s
+                """.formatted(normalizedWallet, nonce).trim();
     }
 
     public AuthResponse register(RegisterRequest request) {
@@ -146,6 +175,13 @@ public class AuthService {
     }
 
     private String normalizeWallet(String walletAddress) {
-        return walletAddress.trim().toLowerCase(Locale.ROOT);
+        if (walletAddress == null || walletAddress.isBlank()) {
+            throw new IllegalArgumentException("wallet address is required");
+        }
+        String normalizedWallet = walletAddress.trim().toLowerCase(Locale.ROOT);
+        if (!ETHEREUM_ADDRESS_PATTERN.matcher(normalizedWallet).matches()) {
+            throw new IllegalArgumentException("wallet address must be a 42-character Ethereum address");
+        }
+        return normalizedWallet;
     }
 }

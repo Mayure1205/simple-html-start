@@ -30,9 +30,13 @@ public class SecurityConfig {
                 }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
-                        .requestMatchers("/api/v1/auth/me", "/api/v1/tracked-wallets/**").authenticated()
-                        .anyRequest().permitAll()
+                        .requestMatchers(HttpMethod.GET, "/", "/dashboard/**", "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/analytics/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auth/nonce").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/wallet-login").permitAll()
+                        .requestMatchers("/api/v1/auth/me", "/api/v1/tracked-wallets/**", "/api/v1/ingestion/**").authenticated()
+                        .requestMatchers("/actuator/**", "/api/v1/**").authenticated()
+                        .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

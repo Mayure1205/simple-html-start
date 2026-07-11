@@ -1,6 +1,6 @@
 # AWS Deployment Runbook
 
-This is Sprint 7 deployment readiness documentation. It does not prove that ChainSight is hosted yet. Add the public URL and screenshots to `docs/interview-evidence.md` only after deployment is actually live.
+This is Sprint 7 deployment readiness documentation. It does not prove that ChainSight is hosted yet. Add the public URL and screenshots to `docs/interview/interview_evidence.md` only after deployment is actually live.
 
 ## Target
 

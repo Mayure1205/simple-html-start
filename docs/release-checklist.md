@@ -11,8 +11,9 @@ Use this before creating a portfolio release tag such as `v1.0.0`.
 - GitHub Actions has at least one passing run for the release commit.
 - Docker Compose production stack has been started at least once.
 - Dashboard has been manually opened and checked.
-- `docs/interview.md` describes only implemented features.
-- `docs/interview-evidence.md` links every major claim to proof.
+- `docs/interview.md` stays a small index and maintenance contract.
+- Relevant `docs/interview/` topic files describe only implemented features.
+- `docs/interview/interview_evidence.md` links every major claim to proof.
 - `docs/benchmark-report.md` contains real measurements or clearly says measurements are pending.
 - AWS deployment evidence is captured before claiming hosting.
 

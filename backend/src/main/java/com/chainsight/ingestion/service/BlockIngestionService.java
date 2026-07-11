@@ -271,6 +271,10 @@ public class BlockIngestionService {
         activeRangeJobsByChain.remove(chainId, 0L);
     }
 
+    public void clearActiveRangeJobSlots() {
+        activeRangeJobsByChain.clear();
+    }
+
     public IngestionStatusResponse getStatus(long chainId) {
         validateSupportedChain(chainId);
         return new IngestionStatusResponse(

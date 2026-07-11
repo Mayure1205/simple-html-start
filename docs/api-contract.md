@@ -8,8 +8,9 @@ This is the planned REST contract for the MVP. Endpoints are versioned under `/a
 - Ethereum addresses are lowercase `0x` strings.
 - Large integer blockchain values are returned as strings to avoid precision loss in JavaScript.
 - Paginated endpoints accept `page` and `size`.
-- Admin endpoints will be protected in a later security sprint.
-- Ingestion and analytics endpoints are protected by a Redis-backed token bucket rate limiter.
+- Ingestion and tracked-wallet endpoints require `Authorization: Bearer <token>`.
+- Read-only analytics endpoints are public but rate-limited.
+- Auth entry points are public but rate-limited with a stricter token bucket.
 
 ## Health
 
@@ -42,6 +43,7 @@ Response:
   "user": {
     "id": 1,
     "email": "mayu@example.com",
+    "walletAddress": null,
     "createdAt": "2026-06-13T10:00:00Z"
   }
 }
@@ -50,6 +52,32 @@ Response:
 ### `POST /api/v1/auth/login`
 
 Authenticates an email/password user and returns a JWT access token.
+
+### `GET /api/v1/auth/nonce?walletAddress={address}`
+
+Creates a short-lived wallet-login challenge. The frontend must ask the selected wallet provider to sign the returned `message`.
+
+Response:
+
+```json
+{
+  "nonce": "7f2c0a1d93e84d8f9d71c6ec5c6bb9a2",
+  "message": "ChainSight wants you to sign in with your Ethereum wallet:\n0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n\nThis signature proves wallet ownership for dashboard login.\nNonce: 7f2c0a1d93e84d8f9d71c6ec5c6bb9a2"
+}
+```
+
+### `POST /api/v1/auth/wallet-login`
+
+Verifies a signed wallet-login challenge and returns the same JWT response shape as email/password login.
+
+Request:
+
+```json
+{
+  "walletAddress": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "signature": "0x..."
+}
+```
 
 ### `GET /api/v1/auth/me`
 
@@ -94,6 +122,8 @@ Response:
 Requires JWT. Removes a tracked wallet owned by the current user.
 
 ## Ingestion
+
+All ingestion endpoints require `Authorization: Bearer <token>`.
 
 The backend implements checkpoint-aware ingestion. Single-block ingestion runs synchronously. Range ingestion is accepted asynchronously: the API returns a job id with `RUNNING`, and the background job performs bounded parallel RPC extraction while database persistence remains ordered by block number.
 
