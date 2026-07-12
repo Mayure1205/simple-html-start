@@ -3,16 +3,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
 import {
-  AccountPanel, AnalyticsPanel, FailuresPanel, IngestionPanel, OverviewPanel, WalletsPanel,
+  AnalyticsPanel, FailuresPanel, IngestionPanel, OverviewPanel, WalletsPanel,
 } from "@/components/Panels";
 import { api, auth } from "@/lib/api";
 
 export default function App() {
-  const [section, setSection] = useState<string>(() => window.location.hash.replace("#", "") || "overview");
+  const [section, setSection] = useState<string>(() => {
+    const h = window.location.hash.replace("#", "") || "overview";
+    return h === "account" ? "overview" : h;
+  });
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const onHash = () => setSection(window.location.hash.replace("#", "") || "overview");
+    const onHash = () => {
+      const h = window.location.hash.replace("#", "") || "overview";
+      setSection(h === "account" ? "overview" : h);
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -30,7 +36,6 @@ export default function App() {
       case "analytics": return <AnalyticsPanel />;
       case "wallets": return <WalletsPanel signedIn={!!user} />;
       case "failures": return <FailuresPanel />;
-      case "account": return <AccountPanel user={user} onAuthed={setUser} onSignOut={() => { auth.clear(); setUser(null); }} />;
       default: return <OverviewPanel />;
     }
   })();
@@ -39,7 +44,12 @@ export default function App() {
     <div className="min-h-screen flex">
       <Sidebar active={section} onSelect={setSection} />
       <div className="flex-1 min-w-0 flex flex-col">
-        <Topbar section={section} onNav={setSection} />
+        <Topbar
+          section={section}
+          user={user}
+          onAuthed={setUser}
+          onSignOut={() => { auth.clear(); setUser(null); }}
+        />
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6">
           <AnimatePresence mode="wait">
             <motion.div
