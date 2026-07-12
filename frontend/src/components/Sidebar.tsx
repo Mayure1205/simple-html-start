@@ -13,8 +13,9 @@ const items: Item[] = [
     icon: <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/></svg> },
   { id: "failures", label: "Failures", hint: "Retry queue",
     icon: <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3.5l9 16H3l9-16z"/><line x1="12" y1="10" x2="12" y2="14"/></svg> },
-  { id: "account", label: "Account", hint: "Session",
-    icon: <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6.5 8-6.5S20 16 20 20"/></svg> },
+  { id: "wallets", label: "Watchlist", hint: "Whale tracking",
+    icon: <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12c3-5 7-7 10-7s7 2 10 7c-3 5-7 7-10 7s-7-2-10-7z"/><circle cx="12" cy="12" r="3"/></svg> },
+
 ];
 
 export function Sidebar({ active, onSelect }: { active: string; onSelect: (id: string) => void }) {
