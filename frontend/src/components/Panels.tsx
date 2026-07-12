@@ -421,7 +421,9 @@ export function AccountPanel({
     try {
       const fn = mode === "login" ? api.login : api.register;
       const r = await fn(email, password);
-      if (r?.token) auth.set(r.token);
+      const token = r?.accessToken || r?.token;
+      if (token) auth.set(token);
+      if (r?.user) { onAuthed(r.user); return; }
       const me = await api.me();
       onAuthed(me);
     } catch (e: any) { setErr(e.message); }
