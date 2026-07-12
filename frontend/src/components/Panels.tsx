@@ -407,7 +407,7 @@ export function WalletsPanel({ signedIn }: { signedIn: boolean }) {
   );
 }
 
-}
+
 
 /* ------------------------ Failures ------------------------ */
 export function FailuresPanel() {
