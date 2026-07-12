@@ -33,24 +33,63 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   // Ingestion
-  ingestionStatus: () => request<any>("/api/v1/ingestion/status"),
+  ingestionStatus: () => request<any>("/api/v1/ingestion/status?chainId=1").then(res => ({
+    latestBlock: res.lastProcessedBlock,
+    totalBlocks: res.indexedBlocks,
+    totalTransactions: res.indexedTransactions,
+    failedBlockCount: res.failedBlockCount,
+    lastCheckpoint: res.lastProcessedBlock,
+    activeJobs: Array.from({ length: res.activeJobCount }).map((_, i) => ({ id: i + 1, status: "RUNNING", fromBlock: 0, toBlock: 0 }))
+  })),
   startRange: (payload: { chainId: number; fromBlock: number; toBlock: number }) =>
-    request<any>("/api/v1/ingestion/range", { method: "POST", body: JSON.stringify(payload) }),
-  failedBlocks: () => request<any>("/api/v1/ingestion/failed-blocks"),
-  retryFailed: (id: number) =>
-    request<any>(`/api/v1/ingestion/failed-blocks/${id}/retry`, { method: "POST" }),
+    request<any>("/api/v1/ingestion/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        chainId: payload.chainId,
+        startBlock: payload.fromBlock,
+        endBlock: payload.toBlock
+      })
+    }),
+  failedBlocks: () => request<any>("/api/v1/ingestion/failed-blocks?chainId=1&status=PENDING").then((res: any[]) =>
+    (res || []).map((fb: any) => ({
+      id: fb.blockNumber,
+      blockNumber: fb.blockNumber,
+      reason: fb.failureReason,
+      retryCount: fb.retryCount
+    }))
+  ),
+  retryFailed: (blockNumber: number) =>
+    request<any>(`/api/v1/ingestion/failed-blocks/${blockNumber}/retry?chainId=1`, { method: "POST" }),
 
   // Analytics
-  networkDaily: (days = 14) => request<any>(`/api/v1/analytics/network/daily?days=${days}`),
-  networkLargest: (limit = 10) => request<any>(`/api/v1/analytics/network/largest-transactions?limit=${limit}`),
-  walletSummary: (addr: string) => request<any>(`/api/v1/analytics/wallets/${addr}/summary`),
+  networkDaily: (days = 14) =>
+    request<any>("/api/v1/analytics/network/daily?chainId=1&from=2024-05-20&to=2024-06-10"),
+  networkLargest: (limit = 10) =>
+    request<any>(`/api/v1/analytics/network/largest-transactions?chainId=1&from=2024-05-20&to=2024-06-10&limit=${limit}`).then(res => ({
+      transactions: (res.transactions || []).map((t: any) => ({
+        hash: t.transactionHash,
+        blockNumber: t.blockNumber,
+        value: t.valueWei,
+        status: t.status
+      }))
+    })),
+  walletSummary: (addr: string) =>
+    request<any>(`/api/v1/analytics/wallets/${addr}/summary?chainId=1`),
   walletTx: (addr: string, page = 0, size = 20) =>
-    request<any>(`/api/v1/analytics/wallets/${addr}/transactions?page=${page}&size=${size}`),
-  // Phase 2 endpoints — UI degrades gracefully if backend not yet deployed
+    request<any>(`/api/v1/analytics/wallets/${addr}/transactions?chainId=1&page=${page}&size=${size}`).then(res => ({
+      transactions: (res.transactions || []).map((t: any) => ({
+        hash: t.transactionHash,
+        blockNumber: t.blockNumber,
+        direction: t.direction,
+        fromAddress: t.fromAddress,
+        toAddress: t.toAddress,
+        value: t.valueWei
+      }))
+    })),
   walletDailyFlow: (addr: string, days = 30) =>
-    request<any>(`/api/v1/analytics/wallets/${addr}/daily-flow?days=${days}`),
+    request<any>(`/api/v1/analytics/wallets/${addr}/daily-flow?chainId=1&days=${days}`),
   walletCounterparties: (addr: string, limit = 10) =>
-    request<any>(`/api/v1/analytics/wallets/${addr}/counterparties?limit=${limit}`),
+    request<any>(`/api/v1/analytics/wallets/${addr}/counterparties?chainId=1&limit=${limit}`),
 
   // Auth
   register: (email: string, password: string) =>
@@ -60,10 +99,10 @@ export const api = {
   me: () => request<any>("/api/v1/auth/me"),
 
   // Tracked wallets
-  tracked: () => request<any[]>("/api/v1/wallets/tracked"),
+  tracked: () => request<any[]>("/api/v1/tracked-wallets"),
   track: (walletAddress: string, label?: string) =>
-    request<any>("/api/v1/wallets/tracked", { method: "POST", body: JSON.stringify({ walletAddress, label }) }),
-  untrack: (id: number) => request<any>(`/api/v1/wallets/tracked/${id}`, { method: "DELETE" }),
+    request<any>("/api/v1/tracked-wallets", { method: "POST", body: JSON.stringify({ chainId: 1, walletAddress, label }) }),
+  untrack: (id: number) => request<any>(`/api/v1/tracked-wallets/${id}`, { method: "DELETE" }),
 };
 
 export function shortHash(h?: string, head = 6, tail = 4) {

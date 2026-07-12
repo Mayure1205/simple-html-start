@@ -37,6 +37,7 @@ Proofs only. No theory.
 | Backend CI workflow exists | `.github/workflows/backend-ci.yml` | `WORKFLOW ADDED - REMOTE RUN PENDING` |
 | Benchmark template exists | `docs/benchmark-report.md` | `NO MEASUREMENTS YET` |
 | AWS runbook exists | `docs/aws-deployment.md` | `NOT DEPLOYED` |
+| Whale watchlist analytics | `GET /daily-flow`, `GET /counterparties` with Redis cache (60s TTL) | `DONE` |
 
 ## Runtime Verification Pass - 2026-06-17
 

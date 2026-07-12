@@ -1,14 +1,13 @@
 package com.chainsight.analytics.service;
 
-import com.chainsight.analytics.dto.WalletSummaryResponse;
-import com.chainsight.analytics.dto.WalletTransactionResponse;
-import com.chainsight.analytics.dto.WalletTransactionsResponse;
+import com.chainsight.analytics.dto.*;
 import com.chainsight.analytics.repository.WalletAnalyticsRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
@@ -17,15 +16,18 @@ public class WalletAnalyticsService {
     private static final Pattern ETHEREUM_ADDRESS_PATTERN = Pattern.compile("^0x[a-f0-9]{40}$");
 
     private final WalletAnalyticsRepository repository;
+    private final WalletAnalyticsCacheService cacheService;
     private final long ethereumChainId;
     private final int maxLimit;
 
     public WalletAnalyticsService(
             WalletAnalyticsRepository repository,
+            WalletAnalyticsCacheService cacheService,
             @Value("${ethereum.chain-id}") long ethereumChainId,
             @Value("${analytics.network.max-limit}") int maxLimit
     ) {
         this.repository = repository;
+        this.cacheService = cacheService;
         this.ethereumChainId = ethereumChainId;
         this.maxLimit = maxLimit;
     }
@@ -94,5 +96,41 @@ public class WalletAnalyticsService {
             return 0;
         }
         return (long) Math.ceil((double) totalTransactions / size);
+    }
+
+    public WalletDailyFlowResponse getDailyFlow(long chainId, String address, int days) {
+        validateSupportedChain(chainId);
+        String normalizedAddress = normalizeAddress(address);
+        if (days <= 0 || days > 365) {
+            throw new IllegalArgumentException("days must be between 1 and 365");
+        }
+
+        Optional<WalletDailyFlowResponse> cached = cacheService.getDailyFlow(chainId, normalizedAddress, days);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+
+        List<WalletDailyFlowPoint> flowPoints = repository.findDailyFlow(chainId, normalizedAddress, days);
+        WalletDailyFlowResponse response = new WalletDailyFlowResponse(chainId, normalizedAddress, flowPoints);
+        cacheService.putDailyFlow(response, days);
+        return response;
+    }
+
+    public WalletCounterpartiesResponse getCounterparties(long chainId, String address, int limit) {
+        validateSupportedChain(chainId);
+        String normalizedAddress = normalizeAddress(address);
+        if (limit <= 0 || limit > maxLimit) {
+            throw new IllegalArgumentException("limit must be positive and less than or equal to " + maxLimit);
+        }
+
+        Optional<WalletCounterpartiesResponse> cached = cacheService.getCounterparties(chainId, normalizedAddress, limit);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+
+        List<WalletCounterpartyPoint> counterparties = repository.findCounterparties(chainId, normalizedAddress, limit);
+        WalletCounterpartiesResponse response = new WalletCounterpartiesResponse(chainId, normalizedAddress, counterparties);
+        cacheService.putCounterparties(response, limit);
+        return response;
     }
 }

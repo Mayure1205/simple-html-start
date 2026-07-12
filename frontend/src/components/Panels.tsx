@@ -29,7 +29,7 @@ export function OverviewPanel() {
   const status = useAsync(() => api.ingestionStatus());
   const daily = useAsync(() => api.networkDaily(14));
 
-  const s = status.data || {};
+  const s = (status.data || {}) as any;
   const dailyPoints = (daily.data?.days || []).map((d: any) => ({
     day: (d.day || "").slice(5),
     tx: Number(d.transactionCount || 0),
@@ -412,7 +412,7 @@ export function WalletsPanel({ signedIn }: { signedIn: boolean }) {
 /* ------------------------ Failures ------------------------ */
 export function FailuresPanel() {
   const { data, reload, loading } = useAsync(() => api.failedBlocks());
-  const rows = data?.failedBlocks || data || [];
+  const rows = (data as any)?.failedBlocks || data || [];
 
   async function retry(id: number) {
     try { await api.retryFailed(id); reload(); } catch (e: any) { alert(e.message); }

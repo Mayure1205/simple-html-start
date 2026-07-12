@@ -1,8 +1,6 @@
 package com.chainsight.analytics.service;
 
-import com.chainsight.analytics.dto.WalletSummaryResponse;
-import com.chainsight.analytics.dto.WalletTransactionResponse;
-import com.chainsight.analytics.dto.WalletTransactionsResponse;
+import com.chainsight.analytics.dto.*;
 import com.chainsight.analytics.repository.WalletAnalyticsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,12 +27,14 @@ class WalletAnalyticsServiceTest {
 
     @Mock
     private WalletAnalyticsRepository repository;
+    @Mock
+    private WalletAnalyticsCacheService cacheService;
 
     private WalletAnalyticsService service;
 
     @BeforeEach
     void setUp() {
-        service = new WalletAnalyticsService(repository, ETHEREUM_CHAIN_ID, MAX_LIMIT);
+        service = new WalletAnalyticsService(repository, cacheService, ETHEREUM_CHAIN_ID, MAX_LIMIT);
     }
 
     @Test
@@ -136,5 +137,57 @@ class WalletAnalyticsServiceTest {
                 .hasMessage("size must be 100 or fewer");
 
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    void getDailyFlowReturnsCachedResponseWhenAvailable() {
+        WalletDailyFlowResponse cachedResponse = new WalletDailyFlowResponse(ETHEREUM_CHAIN_ID, WALLET, List.of());
+        when(cacheService.getDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30)).thenReturn(Optional.of(cachedResponse));
+
+        WalletDailyFlowResponse response = service.getDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30);
+
+        assertThat(response).isEqualTo(cachedResponse);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void getDailyFlowFetchesFromDbAndCachesOnMiss() {
+        List<WalletDailyFlowPoint> flowPoints = List.of(new WalletDailyFlowPoint("2026-06-01", "1000", "500", "500", 2));
+        when(cacheService.getDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30)).thenReturn(Optional.empty());
+        when(repository.findDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30)).thenReturn(flowPoints);
+
+        WalletDailyFlowResponse response = service.getDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30);
+
+        assertThat(response.chainId()).isEqualTo(ETHEREUM_CHAIN_ID);
+        assertThat(response.address()).isEqualTo(WALLET);
+        assertThat(response.days()).isEqualTo(flowPoints);
+        verify(repository).findDailyFlow(ETHEREUM_CHAIN_ID, WALLET, 30);
+        verify(cacheService).putDailyFlow(response, 30);
+    }
+
+    @Test
+    void getCounterpartiesReturnsCachedResponseWhenAvailable() {
+        WalletCounterpartiesResponse cachedResponse = new WalletCounterpartiesResponse(ETHEREUM_CHAIN_ID, WALLET, List.of());
+        when(cacheService.getCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10)).thenReturn(Optional.of(cachedResponse));
+
+        WalletCounterpartiesResponse response = service.getCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10);
+
+        assertThat(response).isEqualTo(cachedResponse);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void getCounterpartiesFetchesFromDbAndCachesOnMiss() {
+        List<WalletCounterpartyPoint> cpList = List.of(new WalletCounterpartyPoint("0xbbbb", "100", "200", 1, 2));
+        when(cacheService.getCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10)).thenReturn(Optional.empty());
+        when(repository.findCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10)).thenReturn(cpList);
+
+        WalletCounterpartiesResponse response = service.getCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10);
+
+        assertThat(response.chainId()).isEqualTo(ETHEREUM_CHAIN_ID);
+        assertThat(response.address()).isEqualTo(WALLET);
+        assertThat(response.counterparties()).isEqualTo(cpList);
+        verify(repository).findCounterparties(ETHEREUM_CHAIN_ID, WALLET, 10);
+        verify(cacheService).putCounterparties(response, 10);
     }
 }

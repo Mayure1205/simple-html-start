@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "cd frontend && npm run dev -- --host 0.0.0.0 --port 8080",
-    "build": "cd frontend && npm install && npm run build && cd .. && rm -rf dist && cp -r backend/src/main/resources/static/dashboard dist",
-    "build:dev": "cd frontend && npm install && npm run build && cd .. && rm -rf dist && cp -r backend/src/main/resources/static/dashboard dist",
+    "build": "cd frontend && npm install && npm run build && cd .. && node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); fs.cpSync('backend/src/main/resources/static/dashboard', 'dist', {recursive:true});\"",
+    "build:dev": "cd frontend && npm install && npm run build && cd .. && node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive:true, force:true}); fs.cpSync('backend/src/main/resources/static/dashboard', 'dist', {recursive:true});\"",
     "preview": "cd frontend && npm run preview",
     "postinstall": "cd frontend && npm install"
   }
