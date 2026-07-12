@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, auth, fmtInt, shortHash } from "@/lib/api";
 import { StatCard } from "./StatCard";
+import { WalletDetail } from "./WalletDetail";
+
 
 function useAsync<T>(fn: () => Promise<T>, deps: any[] = []) {
   const [data, setData] = useState<T | null>(null);
