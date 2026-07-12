@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, auth, fmtInt, shortHash } from "@/lib/api";
 import { StatCard } from "./StatCard";
+import { WalletDetail } from "./WalletDetail";
+
 
 function useAsync<T>(fn: () => Promise<T>, deps: any[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -227,15 +229,12 @@ export function AnalyticsPanel() {
   const daily = useAsync(() => api.networkDaily(days), [days]);
   const largest = useAsync(() => api.networkLargest(10));
   const [wallet, setWallet] = useState("");
-  const [walletData, setWalletData] = useState<any>(null);
-  const [walletErr, setWalletErr] = useState<string | null>(null);
+  const [drawerAddr, setDrawerAddr] = useState<string | null>(null);
 
-  async function lookup(e: React.FormEvent) {
-    e.preventDefault(); setWalletErr(null); setWalletData(null);
-    try {
-      const [summary, txns] = await Promise.all([api.walletSummary(wallet), api.walletTx(wallet, 0, 10)]);
-      setWalletData({ summary, txns });
-    } catch (e: any) { setWalletErr(e.message); }
+  function lookup(e: React.FormEvent) {
+    e.preventDefault();
+    const w = wallet.trim();
+    if (w) setDrawerAddr(w);
   }
 
   const points = (daily.data?.days || []).map((d: any) => ({ day: (d.day || "").slice(5), tx: Number(d.transactionCount || 0) }));
@@ -271,7 +270,11 @@ export function AnalyticsPanel() {
           <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
             {(largest.data?.transactions || []).length === 0 && <div className="p-4 text-xs text-mist-600">No transactions yet.</div>}
             {(largest.data?.transactions || []).map((t: any) => (
-              <div key={t.hash} className="flex items-center justify-between px-4 py-3 text-xs">
+              <button
+                key={t.hash}
+                onClick={() => setDrawerAddr(t.fromAddress || t.toAddress)}
+                className="w-full flex items-center justify-between px-4 py-3 text-xs hover:bg-white/[0.03] text-left"
+              >
                 <div>
                   <div className="font-mono text-mist-200">{shortHash(t.hash, 10, 6)}</div>
                   <div className="text-[11px] text-mist-600">block {fmtInt(t.blockNumber)}</div>
@@ -279,46 +282,28 @@ export function AnalyticsPanel() {
                 <div className="text-right">
                   <div className="font-semibold text-white">{fmtInt(t.valueEth ?? t.value)} <span className="text-mist-600 font-normal">ETH</span></div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
       </div>
 
       <div className="panel">
-        <div className="panel-heading"><h3 className="text-sm font-semibold text-white">Wallet lookup</h3></div>
+        <div className="panel-heading">
+          <h3 className="text-sm font-semibold text-white">Wallet lookup</h3>
+          <span className="text-[11px] text-mist-600">Full analytics drawer — flows, counterparties, distribution</span>
+        </div>
         <form onSubmit={lookup} className="p-5 flex flex-col sm:flex-row gap-3">
           <input className="input flex-1 font-mono" placeholder="0x…" value={wallet} onChange={(e) => setWallet(e.target.value)} />
-          <button className="btn-primary">Analyze</button>
+          <button className="btn-primary">Open wallet</button>
         </form>
-        {walletErr && <div className="mx-5 mb-5 text-xs rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-rose-200">{walletErr}</div>}
-        {walletData && (
-          <div className="p-5 pt-0 space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <MiniStat label="Sent count" value={fmtInt(walletData.summary?.sentCount)} />
-              <MiniStat label="Received count" value={fmtInt(walletData.summary?.receivedCount)} />
-              <MiniStat label="Sent (wei)" value={shortHash(String(walletData.summary?.sentValueWei ?? "0"), 8, 4)} />
-              <MiniStat label="Received (wei)" value={shortHash(String(walletData.summary?.receivedValueWei ?? "0"), 8, 4)} />
-            </div>
-            <div className="rounded-xl border border-white/5 overflow-hidden">
-              <div className="grid grid-cols-4 bg-white/[0.03] px-4 py-2 text-[11px] uppercase tracking-widest text-mist-600">
-                <span>Hash</span><span>Block</span><span>Direction</span><span className="text-right">Value</span>
-              </div>
-              {(walletData.txns?.transactions || []).map((t: any) => (
-                <div key={t.hash} className="grid grid-cols-4 px-4 py-2.5 text-xs border-t border-white/5">
-                  <span className="font-mono text-mist-200">{shortHash(t.hash, 8, 4)}</span>
-                  <span className="text-mist-400">{fmtInt(t.blockNumber)}</span>
-                  <span><span className="chip">{t.direction || (t.fromAddress?.toLowerCase() === wallet.toLowerCase() ? "out" : "in")}</span></span>
-                  <span className="text-right font-mono text-white">{fmtInt(t.valueEth ?? t.value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      <WalletDetail address={drawerAddr} onClose={() => setDrawerAddr(null)} />
     </div>
   );
 }
+
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
@@ -329,51 +314,100 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/* ------------------------ Wallets (tracked) ------------------------ */
+/* ------------------------ Wallets (tracked watchlist) ------------------------ */
 export function WalletsPanel({ signedIn }: { signedIn: boolean }) {
   const { data, reload, error } = useAsync(() => (signedIn ? api.tracked() : Promise.resolve([])), [signedIn]);
   const [addr, setAddr] = useState("");
   const [label, setLabel] = useState("");
+  const [sortBy, setSortBy] = useState<"added" | "address" | "label">("added");
+  const [drawerAddr, setDrawerAddr] = useState<string | null>(null);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     try { await api.track(addr, label || undefined); setAddr(""); setLabel(""); reload(); } catch (e: any) { alert(e.message); }
   }
-  async function remove(id: number) { await api.untrack(id); reload(); }
+  async function remove(id: number, e: React.MouseEvent) { e.stopPropagation(); await api.untrack(id); reload(); }
+
+  const sorted = useMemo(() => {
+    const arr = [...(data || [])];
+    if (sortBy === "address") arr.sort((a, b) => (a.walletAddress || "").localeCompare(b.walletAddress || ""));
+    else if (sortBy === "label") arr.sort((a, b) => (a.label || "").localeCompare(b.label || ""));
+    return arr;
+  }, [data, sortBy]);
 
   if (!signedIn) {
     return <div className="panel p-10 text-center text-mist-400">Sign in to manage your tracked wallets.</div>;
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className="panel lg:col-span-2">
-        <div className="panel-heading"><h3 className="text-sm font-semibold text-white">Track a wallet</h3></div>
-        <form onSubmit={add} className="p-5 space-y-3">
-          <Field label="Address"><input className="input font-mono" required value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="0x…"/></Field>
-          <Field label="Label (optional)"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Cold storage"/></Field>
-          <button className="btn-primary w-full justify-center">Add to watchlist</button>
-        </form>
-      </div>
-      <div className="panel lg:col-span-3">
-        <div className="panel-heading"><h3 className="text-sm font-semibold text-white">Watchlist</h3><span className="chip">{data?.length || 0}</span></div>
-        {error && <div className="p-5 text-xs text-rose-300">{error}</div>}
-        <div className="divide-y divide-white/5">
-          {(data || []).map((w: any) => (
-            <div key={w.id} className="flex items-center justify-between px-5 py-3">
-              <div>
-                <div className="font-mono text-sm text-white">{shortHash(w.walletAddress, 10, 6)}</div>
-                <div className="text-xs text-mist-600">{w.label || "—"}</div>
-              </div>
-              <button className="btn-ghost" onClick={() => remove(w.id)}>Remove</button>
-            </div>
-          ))}
-          {(!data || data.length === 0) && <div className="p-5 text-xs text-mist-600">No wallets tracked yet.</div>}
+    <div className="space-y-6">
+      <div className="panel">
+        <div className="panel-heading">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Whale Watchlist</h3>
+            <p className="text-[11px] text-mist-600 mt-0.5">Tracked wallets are joined against the ingested transactions warehouse — click any row for flows, counterparties, and size distribution.</p>
+          </div>
+          <span className="chip">powered by ETL pipeline</span>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="panel lg:col-span-2">
+          <div className="panel-heading"><h3 className="text-sm font-semibold text-white">Track a wallet</h3></div>
+          <form onSubmit={add} className="p-5 space-y-3">
+            <Field label="Address"><input className="input font-mono" required value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="0x…"/></Field>
+            <Field label="Label (optional)"><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Binance hot wallet"/></Field>
+            <button className="btn-primary w-full justify-center">Add to watchlist</button>
+          </form>
+        </div>
+
+        <div className="panel lg:col-span-3">
+          <div className="panel-heading">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-white">Watchlist</h3>
+              <span className="chip">{data?.length || 0}</span>
+            </div>
+            <div className="flex items-center gap-1 text-[11px]">
+              <span className="text-mist-600 mr-1">sort</span>
+              {(["added", "address", "label"] as const).map((k) => (
+                <button key={k} onClick={() => setSortBy(k)}
+                  className={`px-2 py-1 rounded-md ${sortBy === k ? "bg-indigo-core text-white" : "text-mist-400 hover:bg-white/5"}`}>{k}</button>
+              ))}
+            </div>
+          </div>
+          {error && <div className="p-5 text-xs text-rose-300">{error}</div>}
+          <div className="divide-y divide-white/5">
+            {sorted.map((w: any) => (
+              <button
+                key={w.id}
+                onClick={() => setDrawerAddr(w.walletAddress)}
+                className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-white/[0.03] group"
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-sm text-white truncate">{w.walletAddress}</div>
+                  <div className="text-xs text-mist-600 mt-0.5">{w.label || <span className="italic text-mist-700">unlabeled</span>}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <span className="chip opacity-0 group-hover:opacity-100 transition">Open →</span>
+                  <button className="btn-ghost" onClick={(e) => remove(w.id, e)}>Remove</button>
+                </div>
+              </button>
+            ))}
+            {(!data || data.length === 0) && (
+              <div className="p-8 text-center text-xs text-mist-600">
+                No wallets tracked yet. Add a whale address like <code className="text-mist-400">0x28C6c06298d514Db089934071355E5743bf21d60</code> (Binance 14) to see the pipeline in action.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <WalletDetail address={drawerAddr} onClose={() => setDrawerAddr(null)} />
     </div>
   );
 }
+
+
 
 /* ------------------------ Failures ------------------------ */
 export function FailuresPanel() {

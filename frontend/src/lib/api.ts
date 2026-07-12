@@ -23,7 +23,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const body = await res.json();
       if (body?.message) msg = body.message;
     } catch { /* ignore */ }
-    throw new Error(msg);
+    const err: any = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -44,6 +46,11 @@ export const api = {
   walletSummary: (addr: string) => request<any>(`/api/v1/analytics/wallets/${addr}/summary`),
   walletTx: (addr: string, page = 0, size = 20) =>
     request<any>(`/api/v1/analytics/wallets/${addr}/transactions?page=${page}&size=${size}`),
+  // Phase 2 endpoints — UI degrades gracefully if backend not yet deployed
+  walletDailyFlow: (addr: string, days = 30) =>
+    request<any>(`/api/v1/analytics/wallets/${addr}/daily-flow?days=${days}`),
+  walletCounterparties: (addr: string, limit = 10) =>
+    request<any>(`/api/v1/analytics/wallets/${addr}/counterparties?limit=${limit}`),
 
   // Auth
   register: (email: string, password: string) =>
@@ -69,4 +76,31 @@ export function fmtInt(n: number | string | null | undefined) {
   const num = typeof n === "string" ? Number(n) : n;
   if (!Number.isFinite(num)) return String(n);
   return num.toLocaleString();
+}
+
+// Convert wei-ish value (number, string, or bigint-string) into ETH float.
+export function weiToEth(v: number | string | null | undefined): number {
+  if (v === null || v === undefined || v === "") return 0;
+  try {
+    const s = String(v).replace(/[^0-9-]/g, "");
+    if (!s) return 0;
+    const neg = s.startsWith("-");
+    const abs = neg ? s.slice(1) : s;
+    // scale by 1e18
+    const padded = abs.padStart(19, "0");
+    const intPart = padded.slice(0, -18) || "0";
+    const fracPart = padded.slice(-18, -12); // 6 decimals is plenty for chart
+    const n = Number(`${intPart}.${fracPart}`);
+    return neg ? -n : n;
+  } catch { return 0; }
+}
+
+export function fmtEth(v: number | string | null | undefined, decimals = 4): string {
+  const n = typeof v === "number" ? v : weiToEth(v);
+  if (!Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs === 0) return "0";
+  if (abs < 0.0001) return n.toExponential(2);
+  if (abs >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return n.toLocaleString(undefined, { maximumFractionDigits: decimals });
 }
