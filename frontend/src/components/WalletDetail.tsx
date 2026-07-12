@@ -166,7 +166,7 @@ export function WalletDetail({ address, onClose }: Props) {
                   </div>
                 </Panel>
 
-                <Panel title="Transaction size mix" chip={`${txns.length} txns`} className="lg:col-span-2">
+                <Panel title="ETH transfer size mix" chip={`${txns.length} txns · native ETH only`} className="lg:col-span-2">
                   <div className="h-64 p-4">
                     {loading ? <Skeleton /> :
                      txDistribution.length === 0 ? <Empty msg="No transactions." /> : (
