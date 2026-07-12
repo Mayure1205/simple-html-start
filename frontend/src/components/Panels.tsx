@@ -229,15 +229,12 @@ export function AnalyticsPanel() {
   const daily = useAsync(() => api.networkDaily(days), [days]);
   const largest = useAsync(() => api.networkLargest(10));
   const [wallet, setWallet] = useState("");
-  const [walletData, setWalletData] = useState<any>(null);
-  const [walletErr, setWalletErr] = useState<string | null>(null);
+  const [drawerAddr, setDrawerAddr] = useState<string | null>(null);
 
-  async function lookup(e: React.FormEvent) {
-    e.preventDefault(); setWalletErr(null); setWalletData(null);
-    try {
-      const [summary, txns] = await Promise.all([api.walletSummary(wallet), api.walletTx(wallet, 0, 10)]);
-      setWalletData({ summary, txns });
-    } catch (e: any) { setWalletErr(e.message); }
+  function lookup(e: React.FormEvent) {
+    e.preventDefault();
+    const w = wallet.trim();
+    if (w) setDrawerAddr(w);
   }
 
   const points = (daily.data?.days || []).map((d: any) => ({ day: (d.day || "").slice(5), tx: Number(d.transactionCount || 0) }));
@@ -273,7 +270,11 @@ export function AnalyticsPanel() {
           <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
             {(largest.data?.transactions || []).length === 0 && <div className="p-4 text-xs text-mist-600">No transactions yet.</div>}
             {(largest.data?.transactions || []).map((t: any) => (
-              <div key={t.hash} className="flex items-center justify-between px-4 py-3 text-xs">
+              <button
+                key={t.hash}
+                onClick={() => setDrawerAddr(t.fromAddress || t.toAddress)}
+                className="w-full flex items-center justify-between px-4 py-3 text-xs hover:bg-white/[0.03] text-left"
+              >
                 <div>
                   <div className="font-mono text-mist-200">{shortHash(t.hash, 10, 6)}</div>
                   <div className="text-[11px] text-mist-600">block {fmtInt(t.blockNumber)}</div>
@@ -281,46 +282,28 @@ export function AnalyticsPanel() {
                 <div className="text-right">
                   <div className="font-semibold text-white">{fmtInt(t.valueEth ?? t.value)} <span className="text-mist-600 font-normal">ETH</span></div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
       </div>
 
       <div className="panel">
-        <div className="panel-heading"><h3 className="text-sm font-semibold text-white">Wallet lookup</h3></div>
+        <div className="panel-heading">
+          <h3 className="text-sm font-semibold text-white">Wallet lookup</h3>
+          <span className="text-[11px] text-mist-600">Full analytics drawer — flows, counterparties, distribution</span>
+        </div>
         <form onSubmit={lookup} className="p-5 flex flex-col sm:flex-row gap-3">
           <input className="input flex-1 font-mono" placeholder="0x…" value={wallet} onChange={(e) => setWallet(e.target.value)} />
-          <button className="btn-primary">Analyze</button>
+          <button className="btn-primary">Open wallet</button>
         </form>
-        {walletErr && <div className="mx-5 mb-5 text-xs rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-rose-200">{walletErr}</div>}
-        {walletData && (
-          <div className="p-5 pt-0 space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <MiniStat label="Sent count" value={fmtInt(walletData.summary?.sentCount)} />
-              <MiniStat label="Received count" value={fmtInt(walletData.summary?.receivedCount)} />
-              <MiniStat label="Sent (wei)" value={shortHash(String(walletData.summary?.sentValueWei ?? "0"), 8, 4)} />
-              <MiniStat label="Received (wei)" value={shortHash(String(walletData.summary?.receivedValueWei ?? "0"), 8, 4)} />
-            </div>
-            <div className="rounded-xl border border-white/5 overflow-hidden">
-              <div className="grid grid-cols-4 bg-white/[0.03] px-4 py-2 text-[11px] uppercase tracking-widest text-mist-600">
-                <span>Hash</span><span>Block</span><span>Direction</span><span className="text-right">Value</span>
-              </div>
-              {(walletData.txns?.transactions || []).map((t: any) => (
-                <div key={t.hash} className="grid grid-cols-4 px-4 py-2.5 text-xs border-t border-white/5">
-                  <span className="font-mono text-mist-200">{shortHash(t.hash, 8, 4)}</span>
-                  <span className="text-mist-400">{fmtInt(t.blockNumber)}</span>
-                  <span><span className="chip">{t.direction || (t.fromAddress?.toLowerCase() === wallet.toLowerCase() ? "out" : "in")}</span></span>
-                  <span className="text-right font-mono text-white">{fmtInt(t.valueEth ?? t.value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      <WalletDetail address={drawerAddr} onClose={() => setDrawerAddr(null)} />
     </div>
   );
 }
+
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
