@@ -166,7 +166,7 @@ export function WalletDetail({ address, onClose }: Props) {
                   </div>
                 </Panel>
 
-                <Panel title="Transaction size mix" chip={`${txns.length} txns`} className="lg:col-span-2">
+                <Panel title="ETH transfer size mix" chip={`${txns.length} txns · native ETH only`} className="lg:col-span-2">
                   <div className="h-64 p-4">
                     {loading ? <Skeleton /> :
                      txDistribution.length === 0 ? <Empty msg="No transactions." /> : (
@@ -198,6 +198,39 @@ export function WalletDetail({ address, onClose }: Props) {
                       <Bar dataKey="sent" stackId="cp" fill="#f43f5e" radius={[0,3,3,0]}/>
                     </BarChart></ResponsiveContainer>
                   )}
+                </div>
+              </Panel>
+
+              {/* Token holdings — Phase 2 */}
+              <Panel title="Token holdings (ERC-20)" chip="Phase 2 · roadmap">
+                <div className="p-5">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-center">
+                    <div className="md:col-span-2">
+                      <div className="flex h-40 w-40 mx-auto items-center justify-center rounded-full border border-dashed border-white/10 relative">
+                        <div className="absolute inset-3 rounded-full border border-white/[0.04]" />
+                        <div className="text-center">
+                          <div className="text-[10px] uppercase tracking-widest text-mist-600">Coming</div>
+                          <div className="font-display text-white text-lg">Phase 2</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="md:col-span-3 space-y-3">
+                      <p className="text-sm text-mist-300 leading-relaxed">
+                        Per-token balances (USDT, USDC, LINK, …) with an <span className="text-white">Others</span> slice
+                        for dust holdings will appear here. Requires ERC-20 <code className="text-[11px] text-indigo-glow">Transfer</code> log
+                        decoding during ingestion and a price feed for USD valuation.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="chip">Decode Transfer logs</span>
+                        <span className="chip">token_transfers rollup</span>
+                        <span className="chip">CoinGecko price feed</span>
+                        <span className="chip">Others bucket &lt; 1%</span>
+                      </div>
+                      <div className="text-[11px] text-mist-600">
+                        Today's donut shows <span className="text-mist-400">native ETH transfer sizes</span>, not token holdings — scoped intentionally to protect MVP timeline.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </Panel>
 
