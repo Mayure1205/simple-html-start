@@ -1,5 +1,9 @@
 services:
   backend:
+    # On EC2, set BACKEND_IMAGE to your Docker Hub image (e.g. mayuresh/chainsight-backend:latest)
+    # and run `docker compose pull && docker compose up -d` — no local build needed.
+    # Locally, leave BACKEND_IMAGE unset and `docker compose build` will build from source.
+    image: ${BACKEND_IMAGE:-chainsight-backend:local}
     build:
       context: ../backend
       dockerfile: Dockerfile
